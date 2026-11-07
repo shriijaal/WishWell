@@ -1,0 +1,17 @@
+*.iml
+.gradle/
+.toolchain/
+local.properties
+.idea/
+.DS_Store
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.log
+hs_err_*.log
+replay_pid*.log
+build_output.txt
+

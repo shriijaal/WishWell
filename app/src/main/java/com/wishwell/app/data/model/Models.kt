@@ -1,0 +1,168 @@
+package com.wishwell.app.data.model
+
+import androidx.room.Embedded
+import androidx.room.Entity
+import androidx.room.ForeignKey
+import androidx.room.Index
+import androidx.room.PrimaryKey
+import kotlin.math.roundToInt
+
+@Entity(
+    tableName = "categories",
+    indices = [Index(value = ["name"], unique = true)]
+)
+data class Category(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0L,
+    val name: String,
+    val colorArgb: Int,
+    val emoji: String? = null,
+    val sortOrder: Int = 0,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+@Entity(
+    tableName = "items",
+    foreignKeys = [
+        ForeignKey(
+            entity = Category::class,
+            parentColumns = ["id"],
+            childColumns = ["categoryId"],
+            onDelete = ForeignKey.SET_NULL
+        )
+    ],
+    indices = [Index("categoryId"), Index("isArchived")]
+)
+data class WishItem(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0L,
+    val title: String,
+    val storeName: String,
+    val productUrl: String,
+    val imageUrl: String? = null,
+    val imageUrlsJson: String = "[]",
+    val currencyCode: String = "USD",
+    val currentPrice: Double? = null,
+    val listPrice: Double? = null,
+    val targetPrice: Double? = null,
+    val categoryId: Long? = null,
+    val notes: String = "",
+    val description: String = "",
+    val specsJson: String = "[]",
+    val brand: String? = null,
+    val isArchived: Boolean = false,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
+    val lastCheckedAt: Long? = null,
+    val lastCheckFailed: Boolean = false
+) {
+    fun imageUrls(): List<String> {
+        val parsed = runCatching {
+            val arr = org.json.JSONArray(imageUrlsJson)
+            (0 until arr.length()).mapNotNull { i -> arr.optString(i).takeIf { it.isNotBlank() } }
+        }.getOrDefault(emptyList())
+        if (parsed.isNotEmpty()) return parsed
+        return imageUrl?.takeIf { it.isNotBlank() }?.let { listOf(it) } ?: emptyList()
+    }
+
+    fun specs(): List<Pair<String, String>> = runCatching {
+        val arr = org.json.JSONArray(specsJson)
+        (0 until arr.length()).mapNotNull { i ->
+            val o = arr.optJSONObject(i) ?: return@mapNotNull null
+            val k = o.optString("k").trim()
+            val v = o.optString("v").trim()
+            if (k.isNotEmpty() && v.isNotEmpty()) k to v else null
+        }
+    }.getOrDefault(emptyList())
+
+    companion object {
+        fun encodeImageUrls(urls: List<String>): String =
+            org.json.JSONArray(urls.filter { it.isNotBlank() }.distinct().take(12)).toString()
+
+        fun encodeSpecs(specs: List<Pair<String, String>>): String {
+            val arr = org.json.JSONArray()
+            specs.filter { it.first.isNotBlank() && it.second.isNotBlank() }
+                .distinctBy { it.first.lowercase() }
+                .take(60)
+                .forEach { (k, v) ->
+                    arr.put(org.json.JSONObject().put("k", k.take(80)).put("v", v.take(240)))
+                }
+            return arr.toString()
+        }
+    }
+}
+
+@Entity(
+    tableName = "price_points",
+    foreignKeys = [
+        ForeignKey(
+            entity = WishItem::class,
+            parentColumns = ["id"],
+            childColumns = ["itemId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index("itemId")]
+)
+data class PricePoint(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0L,
+    val itemId: Long,
+    val price: Double,
+    val currencyCode: String = "USD",
+    val recordedAt: Long = System.currentTimeMillis()
+)
+
+/** A wishlist item joined with its price-history aggregates. */
+data class ItemWithStats(
+    @Embedded val item: WishItem,
+    val lowest: Double? = null,
+    val highest: Double? = null,
+    val average: Double? = null,
+    val firstPrice: Double? = null,
+    val latestPrice: Double? = null,
+    val pointCount: Int = 0,
+    val categoryName: String? = null,
+    val categoryColor: Int? = null
+) {
+    val price: Double? get() = item.currentPrice ?: latestPrice
+    val peak: Double? get() = highest ?: item.listPrice
+
+    /** How far below the observed peak the current price sits, in percent. */
+    val discountPercent: Int?
+        get() {
+            val p = price ?: return null
+            val top = peak ?: return null
+            if (top <= 0.0 || p >= top) return null
+            return (((top - p) / top) * 100).roundToInt().coerceIn(1, 99)
+        }
+
+    val hasHistory: Boolean get() = pointCount >= 3
+
+    val isAtLowest: Boolean
+        get() {
+            val p = price ?: return false
+            val low = lowest ?: return false
+            return hasHistory && p <= low + 0.005
+        }
+
+    val isAtHighest: Boolean
+        get() {
+            val p = price ?: return false
+            val top = highest ?: return false
+            return hasHistory && p >= top - 0.005
+        }
+
+    /** 0f = at the all-time low, 1f = at the all-time high. */
+    val rangePosition: Float?
+        get() {
+            val p = price ?: return null
+            val low = lowest ?: return null
+            val high = highest ?: return null
+            if (high - low < 0.01) return null
+            return ((p - low) / (high - low)).toFloat().coerceIn(0f, 1f)
+        }
+}
+
+data class CategoryWithCount(
+    @Embedded val category: Category,
+    val itemCount: Int = 0,
+    val totalValue: Double = 0.0
+)

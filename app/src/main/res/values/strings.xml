@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">Wishwell</string>
+    <string name="notification_channel_name">Price alerts</string>
+    <string name="notification_channel_description">Alerts when a saved item hits your target or a new all-time low.</string>
+    <string name="widget_wishlist_label">Wishlisted items</string>
+    <string name="widget_wishlist_description">Shows your saved wishlist items and prices.</string>
+    <string name="widget_price_drops_label">Price drops</string>
+    <string name="widget_price_drops_description">Shows wishlisted items that are on sale or at an all-time low.</string>
+</resources>
