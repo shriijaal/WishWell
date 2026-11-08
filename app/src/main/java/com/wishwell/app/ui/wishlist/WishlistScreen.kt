@@ -72,8 +72,17 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import android.graphics.RenderEffect
+import android.graphics.RuntimeShader
+import android.os.Build
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.runtime.getValue
@@ -90,6 +99,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
@@ -897,6 +907,67 @@ private fun WishlistNotificationsSheet(
     }
 }
 
+private const val DASHBOARD_PAPER_SHADER = """
+uniform float2 resolution;
+uniform float time;
+uniform half4 tintA;
+uniform half4 tintB;
+uniform float intensity;
+
+float hash(float2 p) {
+    p = fract(p * float2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+}
+
+float noise(float2 p) {
+    float2 i = floor(p);
+    float2 f = fract(p);
+    float a = hash(i);
+    float b = hash(i + float2(1.0, 0.0));
+    float c = hash(i + float2(0.0, 1.0));
+    float d = hash(i + float2(1.0, 1.0));
+    float2 u = f * f * (3.0 - 2.0 * f);
+    return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+}
+
+float fbm(float2 p) {
+    float v = 0.0;
+    float a = 0.5;
+    for (int i = 0; i < 4; i++) {
+        v += a * noise(p);
+        p = p * 2.03 + float2(17.1, 9.2);
+        a *= 0.5;
+    }
+    return v;
+}
+
+half4 main(float2 fragCoord) {
+    float2 uv = fragCoord / max(resolution, float2(1.0));
+    float t = time * 0.035;
+    float2 drift = float2(t * 0.6, t * 0.18);
+    float2 p = uv * float2(8.0, 5.5) + drift;
+
+    float grain = fbm(p * 3.2);
+    float coarse = fbm(p * 1.1 + float2(3.7, 1.9));
+    float fiber = sin((uv.x * 18.0 + uv.y * 2.4 + grain * 3.0 + time * 0.06) * 6.2831);
+    fiber = fiber * 0.5 + 0.5;
+    float fiber2 = sin((uv.y * 14.0 - uv.x * 1.7 + coarse * 2.2 - time * 0.03) * 6.2831);
+    fiber2 = fiber2 * 0.5 + 0.5;
+
+    float speck = smoothstep(0.78, 0.98, hash(floor(fragCoord * 0.45 + drift * 20.0)));
+    float paper = mix(coarse, grain, 0.55);
+    paper = mix(paper, fiber, 0.10);
+    paper = mix(paper, fiber2, 0.06);
+
+    half3 base = mix(tintA.rgb, tintB.rgb, half(uv.y * 0.65 + uv.x * 0.15));
+    half shade = half((paper - 0.5) * 0.18 + (fiber - 0.5) * 0.05 - speck * 0.10);
+    half3 col = clamp(base + shade, 0.0, 1.0);
+    half alpha = half(intensity) * half(0.55 + paper * 0.20);
+    return half4(col, clamp(alpha, 0.0, 1.0));
+}
+"""
+
 @Composable
 private fun DashboardValueCard(summary: WishlistSummary) {
     val colors = MaterialTheme.colorScheme
@@ -916,6 +987,21 @@ private fun DashboardValueCard(summary: WishlistSummary) {
         animationSpec = spring(dampingRatio = 0.82f, stiffness = 500f),
         label = "dashboardCardScale"
     )
+    val paperTransition = rememberInfiniteTransition(label = "dashboardPaper")
+    val paperTime by paperTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 240f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 120_000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "dashboardPaperTime"
+    )
+    val paperShader = remember {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            runCatching { RuntimeShader(DASHBOARD_PAPER_SHADER) }.getOrNull()
+        } else null
+    }
 
     Box(
         modifier = Modifier
@@ -953,28 +1039,39 @@ private fun DashboardValueCard(summary: WishlistSummary) {
                         )
                     )
                 )
-                val grain = if (extra.isDark) Color.White else Color(0xFF6E6252)
-                val step = 6.dp.toPx()
-                var y = 0f
-                var row = 0
-                while (y < size.height) {
-                    var x = if (row % 2 == 0) 0f else step * 0.5f
-                    var col = 0
-                    while (x < size.width) {
-                        val n = ((row * 73856093) xor (col * 19349663) xor 83492791) and 31
-                        if (n < 7) {
-                            val a = if (extra.isDark) 0.018f + (n * 0.003f) else 0.028f + (n * 0.004f)
-                            drawCircle(
-                                color = grain.copy(alpha = a),
-                                radius = 0.9.dp.toPx() + (n % 3) * 0.15.dp.toPx(),
-                                center = Offset(x + (n % 5) * 0.35f, y + (n % 4) * 0.35f)
-                            )
+                if (paperShader != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    val tintA = if (extra.isDark) android.graphics.Color.argb(255, 54, 58, 48) else android.graphics.Color.argb(255, 249, 244, 232)
+                    val tintB = if (extra.isDark) android.graphics.Color.argb(255, 34, 37, 30) else android.graphics.Color.argb(255, 232, 221, 201)
+                    paperShader.setFloatUniform("resolution", size.width, size.height)
+                    paperShader.setFloatUniform("time", paperTime)
+                    paperShader.setColorUniform("tintA", tintA)
+                    paperShader.setColorUniform("tintB", tintB)
+                    paperShader.setFloatUniform("intensity", if (extra.isDark) 0.42f else 0.34f)
+                    drawRect(brush = ShaderBrush(paperShader))
+                } else {
+                    val grain = if (extra.isDark) Color.White else Color(0xFF6E6252)
+                    val step = 6.dp.toPx()
+                    var y = 0f
+                    var row = 0
+                    while (y < size.height) {
+                        var x = if (row % 2 == 0) 0f else step * 0.5f
+                        var col = 0
+                        while (x < size.width) {
+                            val n = ((row * 73856093) xor (col * 19349663) xor 83492791) and 31
+                            if (n < 7) {
+                                val a = if (extra.isDark) 0.018f + (n * 0.003f) else 0.028f + (n * 0.004f)
+                                drawCircle(
+                                    color = grain.copy(alpha = a),
+                                    radius = 0.9.dp.toPx() + (n % 3) * 0.15.dp.toPx(),
+                                    center = Offset(x + (n % 5) * 0.35f, y + (n % 4) * 0.35f)
+                                )
+                            }
+                            x += step
+                            col++
                         }
-                        x += step
-                        col++
+                        y += step
+                        row++
                     }
-                    y += step
-                    row++
                 }
             }
             .border(
