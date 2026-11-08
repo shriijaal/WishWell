@@ -234,7 +234,7 @@ fun WishlistScreen(
                     }
                     Text(
                         text = if (filterNote.isEmpty()) "${state.items.size} shown"
-                        else "${state.items.size} shown ┬╖ ${filterNote.joinToString(", ")}",
+                        else "${state.items.size} shown · ${filterNote.joinToString(", ")}",
                         style = MaterialTheme.typography.labelSmall,
                         color = extra.muted,
                         modifier = Modifier.weight(1f)
@@ -746,14 +746,14 @@ private fun buildWishlistNotifications(
                 id = item.item.id,
                 key = "${item.item.id}:target",
                 title = item.item.title,
-                detail = "Target reached ┬╖ ${formatMoney(price, currency)}",
+                detail = "Target reached · ${formatMoney(price, currency)}",
                 tone = com.wishwell.app.ui.components.BadgeTone.GOOD
             )
             item.isAtLowest -> WishlistNotification(
                 id = item.item.id,
                 key = "${item.item.id}:low",
                 title = item.item.title,
-                detail = "All-time low ┬╖ ${formatMoney(price ?: 0.0, currency)}",
+                detail = "All-time low · ${formatMoney(price ?: 0.0, currency)}",
                 tone = com.wishwell.app.ui.components.BadgeTone.LOW
             )
             item.isOnSale || (item.discountPercent ?: 0) >= 1 -> WishlistNotification(
@@ -763,7 +763,7 @@ private fun buildWishlistNotifications(
                 detail = buildString {
                     item.discountPercent?.let { append("-$it%") }
                     if (price != null) {
-                        if (isNotEmpty()) append(" ┬╖ ")
+                        if (isNotEmpty()) append(" · ")
                         append(formatMoney(price, currency))
                     }
                     if (isEmpty()) append("On sale")
@@ -1328,7 +1328,7 @@ private fun FilterBar(
         }
 
         WishPill(
-            text = if (state.summary.onSaleCount > 0) "On sale ┬╖ ${state.summary.onSaleCount}" else "On sale",
+            text = if (state.summary.onSaleCount > 0) "On sale · ${state.summary.onSaleCount}" else "On sale",
             selected = onSale,
             onClick = { onAttention(if (onSale) AttentionFilter.ALL else AttentionFilter.ON_SALE) },
             leadingIcon = Icons.Rounded.LocalOffer

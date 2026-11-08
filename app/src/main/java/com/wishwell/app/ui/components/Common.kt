@@ -72,7 +72,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.random.Random
 import kotlin.math.roundToInt
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -183,10 +185,12 @@ fun DealBadge(text: String, tone: BadgeTone = BadgeTone.GOOD) {
         BadgeTone.NEUTRAL -> extra.muted
     }
     Surface(shape = RoundedCornerShape(6.dp), color = background) {
-        Text(
+        RollingPriceText(
             text = text.uppercase(),
             style = MaterialTheme.typography.labelSmall,
             color = foreground,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
         )
     }
@@ -646,6 +650,16 @@ fun SwipeableWishCard(
     }
 }
 
+private fun shouldRouletteRoll(text: String): Boolean {
+    if (text.none { it.isDigit() }) return false
+    return text.contains("Rs", ignoreCase = true) || text.contains('₹') || text.contains('%') ||
+        text.contains('$') || text.contains('€') || text.contains('£')
+}
+
+private fun scrambleDigits(text: String): String = buildString(text.length) {
+    for (c in text) append(if (c.isDigit()) ('0' + Random.nextInt(10)) else c)
+}
+
 @Composable
 fun RollingPriceText(
     text: String,
@@ -657,19 +671,40 @@ fun RollingPriceText(
     textAlign: TextAlign? = null,
     textDecoration: androidx.compose.ui.text.style.TextDecoration? = null
 ) {
-    var displayed by remember { mutableStateOf("") }
+    val roll = shouldRouletteRoll(text)
+    if (!roll) {
+        Text(
+            text = text,
+            modifier = modifier,
+            style = style,
+            color = color,
+            maxLines = maxLines,
+            overflow = overflow,
+            textAlign = textAlign,
+            textDecoration = textDecoration
+        )
+        return
+    }
+
+    var displayed by remember { mutableStateOf(scrambleDigits(text)) }
     LaunchedEffect(text) {
+        val steps = 10
+        repeat(steps) { i ->
+            displayed = scrambleDigits(text)
+            delay((28L + i * 9L))
+        }
         displayed = text
     }
     AnimatedContent(
         targetState = displayed,
         modifier = modifier,
         transitionSpec = {
-            (slideInVertically(animationSpec = spring(dampingRatio = 0.9f, stiffness = 380f)) { it / 2 } +
-                fadeIn(animationSpec = spring(stiffness = 380f))) togetherWith
-                (slideOutVertically(animationSpec = spring(dampingRatio = 0.9f, stiffness = 380f)) { -it / 2 } +
-                    fadeOut(animationSpec = spring(stiffness = 380f)))
+            (slideInVertically(animationSpec = spring(dampingRatio = 0.92f, stiffness = 520f)) { fullHeight -> -fullHeight / 3 } +
+                fadeIn(animationSpec = spring(stiffness = 520f))) togetherWith
+                (slideOutVertically(animationSpec = spring(dampingRatio = 0.92f, stiffness = 520f)) { fullHeight -> fullHeight / 3 } +
+                    fadeOut(animationSpec = spring(stiffness = 520f)))
         },
+        contentAlignment = Alignment.CenterStart,
         label = "rollingPrice"
     ) { target ->
         Text(
