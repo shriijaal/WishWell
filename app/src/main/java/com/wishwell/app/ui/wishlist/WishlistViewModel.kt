@@ -53,7 +53,8 @@ data class WishlistUiState(
     val message: String? = null,
     val loading: Boolean = true,
     val summary: WishlistSummary = WishlistSummary(0, "USD", 0.0, 0.0, 0, 0, 0, 0, false),
-    val selectedIds: Set<Long> = emptySet()
+    val selectedIds: Set<Long> = emptySet(),
+    val readNotificationKeys: Set<String> = emptySet()
 ) {
     val hasAnyItems: Boolean get() = allItems.isNotEmpty()
     val isFiltered: Boolean get() = query.isNotBlank() || categoryId != null || attentionFilter != AttentionFilter.ALL
@@ -70,6 +71,7 @@ private data class Filters(
 class WishlistViewModel(private val container: AppContainer) : ViewModel() {
 
     private val repo = container.repository
+    private val prefs = container.prefs
 
     private val query = MutableStateFlow("")
     private val categoryFilter = MutableStateFlow<Long?>(null)
@@ -82,7 +84,7 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
     private val filters = combine(query, categoryFilter, sort, attentionFilter) { q, c, s, a ->
         Filters(q, c, s, a)
     }
-    private val status = combine(refreshing, message) { r, m -> r to m }
+    private val status = combine(refreshing, message, prefs.readNotificationKeys) { r, m, read -> Triple(r, m, read) }
 
     val uiState: StateFlow<WishlistUiState> = combine(
         repo.observeItems(),
@@ -134,7 +136,8 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
             message = s.second,
             loading = false,
             summary = summarize(items),
-            selectedIds = prunedSelected
+            selectedIds = prunedSelected,
+            readNotificationKeys = s.third
         )
     }.stateIn(
         scope = viewModelScope,
@@ -166,6 +169,11 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
 
     fun clearMessage() {
         message.value = null
+    }
+
+    fun markAllNotificationsRead(keys: Set<String>) {
+        if (keys.isEmpty()) return
+        viewModelScope.launch { prefs.markNotificationsRead(keys) }
     }
 
     private fun postMessage(text: String?, autoHideMs: Long = 4000L) {

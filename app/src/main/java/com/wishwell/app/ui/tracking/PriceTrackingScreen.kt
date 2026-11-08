@@ -443,7 +443,7 @@ fun PriceTrackingScreen(
                                 showMoveDialog = false
                             }, modifier = Modifier.fillMaxWidth()) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(categoryIcon(cat.category.name), contentDescription = null, modifier = Modifier.size(16.dp), tint = extra.muted)
+                                    Icon(categoryIcon(cat.category.emoji, cat.category.name), contentDescription = null, modifier = Modifier.size(16.dp), tint = extra.muted)
                                     Spacer(Modifier.width(8.dp))
                                     Text(cat.category.name)
                                 }

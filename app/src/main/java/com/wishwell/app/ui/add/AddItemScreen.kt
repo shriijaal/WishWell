@@ -308,7 +308,7 @@ fun AddItemScreen(
                 items(state.categories, key = { it.category.id }) { category ->
                     WishPill(
                         text = category.category.name,
-                        leadingIcon = categoryIcon(category.category.name),
+                        leadingIcon = categoryIcon(category.category.emoji, category.category.name),
                         selected = state.categoryId == category.category.id,
                         onClick = { viewModel.setCategory(category.category.id) }
                     )

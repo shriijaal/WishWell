@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -26,6 +27,7 @@ class UserPreferences(private val context: Context) {
         val NAVBAR_STYLE = stringPreferencesKey("navbar_style")
         val NAVBAR_GLASS_GLOW = booleanPreferencesKey("navbar_glass_glow")
         val ACCENT_COLOR = stringPreferencesKey("accent_color")
+        val READ_NOTIFICATION_KEYS = stringSetPreferencesKey("read_notification_keys")
     }
 
     val refreshIntervalHours: Flow<Int> =
@@ -59,6 +61,9 @@ class UserPreferences(private val context: Context) {
 
     val accentColor: Flow<String> =
         context.dataStore.data.map { it[Keys.ACCENT_COLOR] ?: "green" }
+
+    val readNotificationKeys: Flow<Set<String>> =
+        context.dataStore.data.map { it[Keys.READ_NOTIFICATION_KEYS] ?: emptySet() }
 
     suspend fun setRefreshInterval(hours: Int) {
         context.dataStore.edit { it[Keys.REFRESH_HOURS] = hours }
@@ -94,5 +99,13 @@ class UserPreferences(private val context: Context) {
 
     suspend fun setAccentColor(key: String) {
         context.dataStore.edit { it[Keys.ACCENT_COLOR] = key }
+    }
+
+    suspend fun markNotificationsRead(keys: Set<String>) {
+        if (keys.isEmpty()) return
+        context.dataStore.edit { prefs ->
+            val current = prefs[Keys.READ_NOTIFICATION_KEYS] ?: emptySet()
+            prefs[Keys.READ_NOTIFICATION_KEYS] = current + keys
+        }
     }
 }

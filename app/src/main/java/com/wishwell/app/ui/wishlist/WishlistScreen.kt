@@ -1,4 +1,4 @@
-﻿package com.wishwell.app.ui.wishlist
+package com.wishwell.app.ui.wishlist
 
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -72,6 +72,10 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
@@ -183,7 +187,8 @@ fun WishlistScreen(
                 onOpenItem = { id ->
                     revealedItemId = null
                     onOpenItem(id)
-                }
+                },
+                onMarkNotificationsRead = viewModel::markAllNotificationsRead
             )
         }
 
@@ -228,7 +233,7 @@ fun WishlistScreen(
                     }
                     Text(
                         text = if (filterNote.isEmpty()) "${state.items.size} shown"
-                        else "${state.items.size} shown Â· ${filterNote.joinToString(", ")}",
+                        else "${state.items.size} shown · ${filterNote.joinToString(", ")}",
                         style = MaterialTheme.typography.labelSmall,
                         color = extra.muted,
                         modifier = Modifier.weight(1f)
@@ -525,7 +530,7 @@ fun WishlistScreen(
                                 showMoveDialog = false
                             }, modifier = Modifier.fillMaxWidth()) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(categoryIcon(cat.category.name), contentDescription = null, modifier = Modifier.size(16.dp), tint = extra.muted)
+                                    Icon(categoryIcon(cat.category.emoji, cat.category.name), contentDescription = null, modifier = Modifier.size(16.dp), tint = extra.muted)
                                     Spacer(Modifier.width(8.dp))
                                     Text(cat.category.name)
                                 }
@@ -619,18 +624,25 @@ private fun SelectionBar(
 
 private data class WishlistNotification(
     val id: Long,
+    val key: String,
     val title: String,
     val detail: String,
     val tone: com.wishwell.app.ui.components.BadgeTone
 )
 
 @Composable
-private fun WishlistHeader(state: WishlistUiState, onOpenItem: (Long) -> Unit) {
+private fun WishlistHeader(
+    state: WishlistUiState,
+    onOpenItem: (Long) -> Unit,
+    onMarkNotificationsRead: (Set<String>) -> Unit
+) {
     val extra = LocalWishExtraColors.current
     val colors = MaterialTheme.colorScheme
     val summary = state.summary
     var showNotifications by remember { mutableStateOf(false) }
-    val notifications = remember(state.allItems) { buildWishlistNotifications(state.allItems) }
+    val notifications = remember(state.allItems, state.readNotificationKeys) {
+        buildWishlistNotifications(state.allItems, state.readNotificationKeys)
+    }
 
     if (showNotifications) {
         WishlistNotificationsSheet(
@@ -639,6 +651,7 @@ private fun WishlistHeader(state: WishlistUiState, onOpenItem: (Long) -> Unit) {
                 showNotifications = false
                 onOpenItem(id)
             },
+            onMarkAllRead = { onMarkNotificationsRead(notifications.mapTo(linkedSetOf()) { it.key }) },
             onDismiss = { showNotifications = false }
         )
     }
@@ -718,45 +731,54 @@ private fun NotificationButton(count: Int, onClick: () -> Unit) {
     }
 }
 
-private fun buildWishlistNotifications(items: List<ItemWithStats>): List<WishlistNotification> {
+private fun buildWishlistNotifications(
+    items: List<ItemWithStats>,
+    readKeys: Set<String> = emptySet()
+): List<WishlistNotification> {
     val out = mutableListOf<WishlistNotification>()
     items.forEach { item ->
         val price = item.price
         val currency = item.item.currencyCode
         val target = item.item.targetPrice
-        when {
-            target != null && price != null && price <= target + 0.005 -> out += WishlistNotification(
+        val n = when {
+            target != null && price != null && price <= target + 0.005 -> WishlistNotification(
                 id = item.item.id,
+                key = "${item.item.id}:target",
                 title = item.item.title,
-                detail = "Target reached Â· ${formatMoney(price, currency)}",
+                detail = "Target reached · ${formatMoney(price, currency)}",
                 tone = com.wishwell.app.ui.components.BadgeTone.GOOD
             )
-            item.isAtLowest -> out += WishlistNotification(
+            item.isAtLowest -> WishlistNotification(
                 id = item.item.id,
+                key = "${item.item.id}:low",
                 title = item.item.title,
-                detail = "All-time low Â· ${formatMoney(price ?: 0.0, currency)}",
+                detail = "All-time low · ${formatMoney(price ?: 0.0, currency)}",
                 tone = com.wishwell.app.ui.components.BadgeTone.LOW
             )
-            item.isOnSale || (item.discountPercent ?: 0) >= 1 -> out += WishlistNotification(
+            item.isOnSale || (item.discountPercent ?: 0) >= 1 -> WishlistNotification(
                 id = item.item.id,
+                key = "${item.item.id}:sale",
                 title = item.item.title,
                 detail = buildString {
                     item.discountPercent?.let { append("-$it%") }
                     if (price != null) {
-                        if (isNotEmpty()) append(" Â· ")
+                        if (isNotEmpty()) append(" · ")
                         append(formatMoney(price, currency))
                     }
                     if (isEmpty()) append("On sale")
                 },
                 tone = com.wishwell.app.ui.components.BadgeTone.GOOD
             )
-            item.item.lastCheckFailed -> out += WishlistNotification(
+            item.item.lastCheckFailed -> WishlistNotification(
                 id = item.item.id,
+                key = "${item.item.id}:failed",
                 title = item.item.title,
                 detail = "Price check failed",
                 tone = com.wishwell.app.ui.components.BadgeTone.HIGH
             )
+            else -> null
         }
+        if (n != null && n.key !in readKeys) out += n
     }
     return out.sortedWith(
         compareBy<WishlistNotification> {
@@ -775,6 +797,7 @@ private fun buildWishlistNotifications(items: List<ItemWithStats>): List<Wishlis
 private fun WishlistNotificationsSheet(
     notifications: List<WishlistNotification>,
     onOpenItem: (Long) -> Unit,
+    onMarkAllRead: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
@@ -814,11 +837,9 @@ private fun WishlistNotificationsSheet(
                     modifier = Modifier.weight(1f)
                 )
                 if (notifications.isNotEmpty()) {
-                    Text(
-                        text = notifications.size.toString(),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = extra.muted
-                    )
+                    TextButton(onClick = onMarkAllRead) {
+                        Text("Mark all as read", color = colors.primary)
+                    }
                 }
             }
             Spacer(Modifier.height(14.dp))
@@ -887,11 +908,23 @@ private fun DashboardValueCard(summary: WishlistSummary) {
     val sandDeep = Color(0xFFE8DECC)
     val ink = if (extra.isDark) colors.onSurface else Color(0xFF2A241B)
     val subInk = if (extra.isDark) extra.muted else Color(0xFF6B6254)
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.985f else 1f,
+        animationSpec = spring(dampingRatio = 0.82f, stiffness = 500f),
+        label = "dashboardCardScale"
+    )
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
             .clip(shape)
+            .clickable(interactionSource = interactionSource, indication = null) { }
             .drawBehind {
                 val accent = colors.primary.copy(alpha = if (extra.isDark) 0.18f else 0.10f)
                 val baseTop = if (extra.isDark) Color(0xFF262820) else sandLight
@@ -1231,7 +1264,7 @@ private fun FilterBar(
         activeCategory != null -> activeCategory.name
         else -> "All items"
     }
-    val categoryGlyph = if (state.categoryId == -1L) Icons.Rounded.Category else categoryIcon(activeCategory?.name)
+    val categoryGlyph = if (state.categoryId == -1L) Icons.Rounded.Category else categoryIcon(activeCategory?.emoji, activeCategory?.name)
     val onSale = state.attentionFilter == AttentionFilter.ON_SALE
 
     Row(
@@ -1270,7 +1303,7 @@ private fun FilterBar(
                         },
                         leadingIcon = {
                             Icon(
-                                categoryIcon(category.category.name),
+                                categoryIcon(category.category.emoji, category.category.name),
                                 contentDescription = null,
                                 modifier = Modifier.size(18.dp)
                             )

@@ -152,14 +152,9 @@ fun WishPill(
     }
 }
 
-fun categoryIcon(name: String?): ImageVector = when (name?.trim()?.lowercase()) {
-    "tech", "technology", "electronics", "gadgets" -> Icons.Rounded.Devices
-    "home", "house", "furniture" -> Icons.Rounded.Home
-    "fashion", "clothing", "clothes", "style" -> Icons.Rounded.Checkroom
-    "fitness", "sports", "gym", "health" -> Icons.Rounded.FitnessCenter
-    "gifts", "gift" -> Icons.Rounded.CardGiftcard
-    else -> Icons.Rounded.Category
-}
+fun categoryIcon(name: String?): ImageVector = CategoryIcons.resolve(null, name)
+
+fun categoryIcon(iconKey: String?, name: String?): ImageVector = CategoryIcons.resolve(iconKey, name)
 
 @Composable
 fun DealBadge(text: String, tone: BadgeTone = BadgeTone.GOOD) {

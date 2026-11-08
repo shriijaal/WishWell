@@ -13,12 +13,15 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -56,6 +59,7 @@ import com.wishwell.app.ui.components.IconCircleButton
 import com.wishwell.app.ui.components.NoticeBar
 import com.wishwell.app.ui.components.SectionLabel
 import com.wishwell.app.ui.components.WishDialog
+import com.wishwell.app.ui.components.CategoryIcons
 import com.wishwell.app.ui.components.categoryIcon
 import com.wishwell.app.ui.theme.LocalWishExtraColors
 import com.wishwell.app.util.Palette
@@ -75,12 +79,14 @@ fun CollectionsScreen(container: AppContainer) {
     var editingCategory by remember { mutableStateOf<Category?>(null) }
     var nameInput by remember { mutableStateOf("") }
     var colorInput by remember { mutableStateOf(Palette.FOREST) }
+    var iconKeyInput by remember { mutableStateOf<String?>(null) }
     var deletingCategory by remember { mutableStateOf<Category?>(null) }
 
     fun openEditor(category: Category?) {
         editingCategory = category
         nameInput = category?.name.orEmpty()
         colorInput = category?.colorArgb ?: Palette.all.random()
+        iconKeyInput = category?.emoji
         showEditor = true
     }
 
@@ -167,9 +173,9 @@ fun CollectionsScreen(container: AppContainer) {
             onConfirm = {
                 val category = editingCategory
                 if (category == null) {
-                    viewModel.add(nameInput, colorInput, null)
+                    viewModel.add(nameInput, colorInput, iconKeyInput)
                 } else {
-                    viewModel.update(category, nameInput, colorInput, null)
+                    viewModel.update(category, nameInput, colorInput, iconKeyInput)
                 }
                 showEditor = false
             }
@@ -213,6 +219,56 @@ fun CollectionsScreen(container: AppContainer) {
                                         .clip(CircleShape)
                                         .background(extra.limeInk.copy(alpha = 0.75f))
                                 )
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = "ICON",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = extra.muted
+                )
+                Spacer(Modifier.height(8.dp))
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 220.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    CategoryIcons.all.chunked(6).forEach { rowIcons ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            rowIcons.forEach { option ->
+                                val selected = iconKeyInput == option.key
+                                val tint = Color(colorInput)
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(
+                                            if (selected) tint.copy(alpha = 0.18f) else extra.sunken.copy(alpha = 0.45f)
+                                        )
+                                        .then(
+                                            if (selected) Modifier.border(1.5.dp, tint.copy(alpha = 0.65f), RoundedCornerShape(12.dp))
+                                            else Modifier.border(1.dp, extra.hairline.copy(alpha = 0.55f), RoundedCornerShape(12.dp))
+                                        )
+                                        .clickable { iconKeyInput = if (selected) null else option.key },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = option.icon,
+                                        contentDescription = option.label,
+                                        tint = if (selected) tint else extra.muted,
+                                        modifier = Modifier.size(19.dp)
+                                    )
+                                }
+                            }
+                            repeat((6 - rowIcons.size).coerceAtLeast(0)) {
+                                Spacer(Modifier.size(40.dp))
                             }
                         }
                     }
@@ -281,7 +337,7 @@ private fun CollectionCard(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = categoryIcon(category.category.name),
+                    imageVector = categoryIcon(category.category.emoji, category.category.name),
                     contentDescription = null,
                     tint = color,
                     modifier = Modifier.size(20.dp)

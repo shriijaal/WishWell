@@ -454,7 +454,7 @@ class WishlistRepository(
                 Category(
                     name = clean,
                     colorArgb = colorArgb,
-                    emoji = emoji?.trim()?.take(2)?.takeIf { it.isNotEmpty() },
+                    emoji = emoji?.trim()?.take(32)?.takeIf { it.isNotEmpty() },
                     sortOrder = order
                 )
             )
@@ -472,7 +472,7 @@ class WishlistRepository(
                 category.copy(
                     name = clean,
                     colorArgb = colorArgb,
-                    emoji = emoji?.trim()?.take(2)?.takeIf { it.isNotEmpty() }
+                    emoji = emoji?.trim()?.take(32)?.takeIf { it.isNotEmpty() }
                 )
             )
         }
