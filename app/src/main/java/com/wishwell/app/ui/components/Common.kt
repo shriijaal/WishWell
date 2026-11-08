@@ -700,35 +700,23 @@ fun RollingPriceText(
     var displayed by remember(rollKey) { mutableStateOf(if (animateNow) scrambleDigits(text) else text) }
     LaunchedEffect(rollKey) {
         if (animateNow) {
-            repeat(10) { i ->
+            repeat(8) { i ->
                 displayed = scrambleDigits(text)
-                delay((28L + i * 9L))
+                delay((28L + i * 12L))
             }
         }
         displayed = text
     }
-    AnimatedContent(
-        targetState = displayed,
+    Text(
+        text = displayed,
         modifier = modifier,
-        transitionSpec = {
-            (slideInVertically(animationSpec = spring(dampingRatio = 0.92f, stiffness = 520f)) { fullHeight -> -fullHeight / 3 } +
-                fadeIn(animationSpec = spring(stiffness = 520f))) togetherWith
-                (slideOutVertically(animationSpec = spring(dampingRatio = 0.92f, stiffness = 520f)) { fullHeight -> fullHeight / 3 } +
-                    fadeOut(animationSpec = spring(stiffness = 520f)))
-        },
-        contentAlignment = Alignment.CenterStart,
-        label = "rollingPrice"
-    ) { target ->
-        Text(
-            text = target,
-            style = style,
-            color = color,
-            maxLines = maxLines,
-            overflow = overflow,
-            textAlign = textAlign,
-            textDecoration = textDecoration
-        )
-    }
+        style = style,
+        color = color,
+        maxLines = maxLines,
+        overflow = overflow,
+        textAlign = textAlign,
+        textDecoration = textDecoration
+    )
 }
 
 @Composable
