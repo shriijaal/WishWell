@@ -910,8 +910,8 @@ private fun WishlistNotificationsSheet(
 private const val DASHBOARD_PAPER_SHADER = """
 uniform float2 resolution;
 uniform float time;
-uniform half4 tintA;
-uniform half4 tintB;
+uniform float4 tintA;
+uniform float4 tintB;
 uniform float intensity;
 
 float hash(float2 p) {
@@ -960,11 +960,11 @@ half4 main(float2 fragCoord) {
     paper = mix(paper, fiber, 0.10);
     paper = mix(paper, fiber2, 0.06);
 
-    half3 base = mix(tintA.rgb, tintB.rgb, half(uv.y * 0.65 + uv.x * 0.15));
-    half shade = half((paper - 0.5) * 0.18 + (fiber - 0.5) * 0.05 - speck * 0.10);
-    half3 col = clamp(base + shade, 0.0, 1.0);
-    half alpha = half(intensity) * half(0.55 + paper * 0.20);
-    return half4(col, clamp(alpha, 0.0, 1.0));
+    float3 base = mix(tintA.rgb, tintB.rgb, uv.y * 0.65 + uv.x * 0.15);
+    float shade = (paper - 0.5) * 0.18 + (fiber - 0.5) * 0.05 - speck * 0.10;
+    float3 col = clamp(base + shade, 0.0, 1.0);
+    float alpha = intensity * (0.55 + paper * 0.20);
+    return half4(half3(col), half(clamp(alpha, 0.0, 1.0)));
 }
 """
 
@@ -1039,16 +1039,19 @@ private fun DashboardValueCard(summary: WishlistSummary) {
                         )
                     )
                 )
-                if (paperShader != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    val tintA = if (extra.isDark) android.graphics.Color.argb(255, 54, 58, 48) else android.graphics.Color.argb(255, 249, 244, 232)
-                    val tintB = if (extra.isDark) android.graphics.Color.argb(255, 34, 37, 30) else android.graphics.Color.argb(255, 232, 221, 201)
-                    paperShader.setFloatUniform("resolution", size.width, size.height)
-                    paperShader.setFloatUniform("time", paperTime)
-                    paperShader.setColorUniform("tintA", tintA)
-                    paperShader.setColorUniform("tintB", tintB)
-                    paperShader.setFloatUniform("intensity", if (extra.isDark) 0.42f else 0.34f)
-                    drawRect(brush = ShaderBrush(paperShader))
-                } else {
+                val shaderDrawn = if (paperShader != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    runCatching {
+                        val tintA = if (extra.isDark) Color(0xFF363A30) else Color(0xFFF9F4E8)
+                        val tintB = if (extra.isDark) Color(0xFF22251E) else Color(0xFFE8DDC9)
+                        paperShader.setFloatUniform("resolution", size.width, size.height)
+                        paperShader.setFloatUniform("time", paperTime)
+                        paperShader.setFloatUniform("tintA", tintA.red, tintA.green, tintA.blue, tintA.alpha)
+                        paperShader.setFloatUniform("tintB", tintB.red, tintB.green, tintB.blue, tintB.alpha)
+                        paperShader.setFloatUniform("intensity", if (extra.isDark) 0.42f else 0.34f)
+                        drawRect(brush = ShaderBrush(paperShader))
+                    }.isSuccess
+                } else false
+                if (!shaderDrawn) {
                     val grain = if (extra.isDark) Color.White else Color(0xFF6E6252)
                     val step = 6.dp.toPx()
                     var y = 0f
