@@ -12,7 +12,7 @@ import com.wishwell.app.data.model.WishItem
 
 @Database(
     entities = [Category::class, WishItem::class, PricePoint::class],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class WishwellDatabase : RoomDatabase() {
@@ -48,13 +48,21 @@ abstract class WishwellDatabase : RoomDatabase() {
             }
         }
 
+        // No schema changes; keeps databases opened by newer debug builds compatible.
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+            }
+        }
+
         fun build(context: Context): WishwellDatabase =
             Room.databaseBuilder(
                 context.applicationContext,
                 WishwellDatabase::class.java,
                 "wishwell.db"
             )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                .fallbackToDestructiveMigration()
+                .fallbackToDestructiveMigrationOnDowngrade()
                 .build()
     }
 }
