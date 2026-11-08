@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -42,6 +43,7 @@ import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.LocalOffer
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SwapVert
+import androidx.compose.material.icons.automirrored.rounded.TrendingDown
 import androidx.compose.material.icons.automirrored.rounded.ViewList
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -86,7 +88,6 @@ import com.wishwell.app.ui.components.NoticeBar
 import com.wishwell.app.ui.components.ConfirmDialog
 import com.wishwell.app.ui.components.ProductThumb
 import com.wishwell.app.ui.components.SectionLabel
-import com.wishwell.app.ui.components.StatTile
 import com.wishwell.app.ui.components.SwipeableWishCard
 import com.wishwell.app.ui.components.WishCard
 import com.wishwell.app.ui.components.WishPill
@@ -586,65 +587,40 @@ private fun WishlistHeader(state: WishlistUiState) {
     val summary = state.summary
 
     Column(modifier = Modifier.padding(horizontal = 20.dp)) {
-        Text(
-            text = "WISHWELL",
-            style = MaterialTheme.typography.titleLarge.copy(
-                letterSpacing = 4.sp,
-                fontWeight = FontWeight.Bold
-            ),
-            color = colors.onBackground
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "WISHWELL",
+                style = MaterialTheme.typography.titleLarge.copy(
+                    letterSpacing = 4.sp,
+                    fontWeight = FontWeight.Bold
+                ),
+                color = colors.onBackground,
+                modifier = Modifier.weight(1f)
+            )
+            WatchStatusPill(
+                count = summary.itemCount,
+                checkFailed = summary.checkFailedCount
+            )
+        }
 
         Spacer(Modifier.height(12.dp))
         Text(
-            text = "Your library, watched for price drops.",
+            text = "Your library.",
+            style = MaterialTheme.typography.displayMedium,
+            color = colors.onBackground
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = "Watched for price drops, all-time lows, and target hits.",
             style = MaterialTheme.typography.bodyMedium,
             color = extra.muted
         )
 
         if (summary.itemCount > 0) {
-            Spacer(Modifier.height(14.dp))
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                StatTile(
-                    label = "Tracked",
-                    value = if (summary.trackedValue > 0.0) formatMoney(summary.trackedValue, summary.currencyCode)
-                    else "${summary.itemCount}",
-                    caption = if (summary.trackedValue > 0.0) "${summary.itemCount} item${if (summary.itemCount == 1) "" else "s"}" else "items saved",
-                    modifier = Modifier.weight(1f)
-                )
-                StatTile(
-                    label = "Below peak",
-                    value = if (summary.belowPeak >= 1.0) formatMoney(summary.belowPeak, summary.currencyCode) else "—",
-                    caption = if (summary.belowPeak >= 1.0) "potential savings" else "no drops yet",
-                    modifier = Modifier.weight(1f)
-                )
-            }
+            Spacer(Modifier.height(16.dp))
+            DashboardValueCard(summary = summary)
             Spacer(Modifier.height(10.dp))
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                StatTile(
-                    label = "All-time lows",
-                    value = summary.atLowCount.toString(),
-                    caption = if (summary.atLowCount == 1) "item at its low" else "items at lows",
-                    modifier = Modifier.weight(1f)
-                )
-                StatTile(
-                    label = "Deals",
-                    value = maxOf(summary.onSaleCount, summary.belowTargetCount).toString(),
-                    caption = when {
-                        summary.belowTargetCount > 0 -> "${summary.belowTargetCount} below target"
-                        summary.onSaleCount > 0 -> "on sale / dropped"
-                        summary.checkFailedCount > 0 -> "${summary.checkFailedCount} need a check"
-                        else -> "nothing flagged"
-                    },
-                    modifier = Modifier.weight(1f)
-                )
-            }
+            DashboardMetrics(summary = summary)
             if (summary.mixedCurrencies) {
                 Spacer(Modifier.height(8.dp))
                 Text(
@@ -656,6 +632,187 @@ private fun WishlistHeader(state: WishlistUiState) {
         }
         Spacer(Modifier.height(18.dp))
     }
+}
+
+@Composable
+private fun WatchStatusPill(count: Int, checkFailed: Int) {
+    val extra = LocalWishExtraColors.current
+    val dotColor = if (checkFailed > 0) extra.terracotta else extra.moss
+    val label = when {
+        checkFailed > 0 -> "$checkFailed to check"
+        count > 0 -> "Watching $count"
+        else -> "Ready"
+    }
+    Surface(
+        shape = CircleShape,
+        color = extra.sunken.copy(alpha = 0.55f)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .background(dotColor, CircleShape)
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.6.sp),
+                color = extra.muted
+            )
+        }
+    }
+}
+
+@Composable
+private fun DashboardValueCard(summary: WishlistSummary) {
+    val colors = MaterialTheme.colorScheme
+    val extra = LocalWishExtraColors.current
+    val hasValue = summary.trackedValue > 0.0
+    val savings = summary.belowPeak
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        color = colors.primary
+    ) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.TrendingDown,
+                contentDescription = null,
+                tint = colors.onPrimary.copy(alpha = 0.10f),
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = 16.dp, y = (-12).dp)
+                    .size(118.dp)
+            )
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text(
+                    text = "TRACKED VALUE",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.onPrimary.copy(alpha = 0.72f)
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = if (hasValue) formatMoney(summary.trackedValue, summary.currencyCode)
+                    else "${summary.itemCount}",
+                    style = MaterialTheme.typography.displayMedium,
+                    color = colors.onPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(10.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = if (hasValue) {
+                            "${summary.itemCount} item${if (summary.itemCount == 1) "" else "s"}"
+                        } else {
+                            "item${if (summary.itemCount == 1) "" else "s"} saved"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onPrimary.copy(alpha = 0.78f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    if (savings >= 1.0) {
+                        val chipBg = if (extra.isDark) colors.onPrimary else extra.lime
+                        val chipFg = if (extra.isDark) colors.primary else extra.limeInk
+                        Surface(shape = CircleShape, color = chipBg) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Rounded.TrendingDown,
+                                    contentDescription = null,
+                                    tint = chipFg,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Text(
+                                    text = "${formatMoney(savings, summary.currencyCode)} saved",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = chipFg,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DashboardMetrics(summary: WishlistSummary) {
+    val extra = LocalWishExtraColors.current
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        color = extra.sunken.copy(alpha = 0.4f)
+    ) {
+        Row(
+            modifier = Modifier.padding(vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            DashboardMetric(
+                label = "At low",
+                value = summary.atLowCount,
+                modifier = Modifier.weight(1f)
+            )
+            MetricDivider()
+            DashboardMetric(
+                label = "On sale",
+                value = summary.onSaleCount,
+                modifier = Modifier.weight(1f)
+            )
+            MetricDivider()
+            DashboardMetric(
+                label = "Targets",
+                value = summary.belowTargetCount,
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun DashboardMetric(label: String, value: Int, modifier: Modifier = Modifier) {
+    val extra = LocalWishExtraColors.current
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = value.toString(),
+            style = MaterialTheme.typography.titleLarge.copy(fontFeatureSettings = "tnum"),
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Spacer(Modifier.height(1.dp))
+        Text(
+            text = label.uppercase(),
+            style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.2.sp),
+            color = extra.muted
+        )
+    }
+}
+
+@Composable
+private fun MetricDivider() {
+    val extra = LocalWishExtraColors.current
+    Box(
+        modifier = Modifier
+            .width(1.dp)
+            .height(28.dp)
+            .background(extra.hairline)
+    )
 }
 
 @Composable
