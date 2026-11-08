@@ -77,7 +77,6 @@ class ProductScraper(
         val offers = jsonLd?.opt("offers")
         val offerPrice = priceForOffers(offers)
         val offerCurrency = currencyForOffers(offers)
-        val aggregateHigh = highPriceForOffers(offers)
         val originalPrice = extractOriginalPrice(document)
 
         val ogTitle = document.metaContent("og:title")
@@ -116,8 +115,9 @@ class ProductScraper(
             ?: scriptData?.price
             ?: domCurrent
 
+        // `aggregateHigh` (JSON-LD highPrice/offer range) is intentionally not used as a standalone
+        // list/original price: on variant/fabric products it reflects a price range, not a discount.
         var listPrice = originalPrice
-            ?: aggregateHigh
             ?: scriptData?.listPrice
             ?: urlHints.second
             ?: domOriginal
