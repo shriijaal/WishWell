@@ -3,6 +3,7 @@ package com.wishwell.app.ui.wishlist
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -45,7 +46,11 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material.icons.automirrored.rounded.TrendingDown
 import androidx.compose.material.icons.automirrored.rounded.ViewList
+import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.NotificationsNone
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -62,6 +67,7 @@ import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -153,7 +159,13 @@ fun WishlistScreen(
         contentPadding = PaddingValues(top = 6.dp, bottom = if (state.selectionMode) 190.dp else 120.dp)
     ) {
         item(key = "header") {
-            WishlistHeader(state = state)
+            WishlistHeader(
+                state = state,
+                onOpenItem = { id ->
+                    revealedItemId = null
+                    onOpenItem(id)
+                }
+            )
         }
 
 
@@ -580,11 +592,31 @@ private fun SelectionBar(
     }
 }
 
+private data class WishlistNotification(
+    val id: Long,
+    val title: String,
+    val detail: String,
+    val tone: com.wishwell.app.ui.components.BadgeTone
+)
+
 @Composable
-private fun WishlistHeader(state: WishlistUiState) {
+private fun WishlistHeader(state: WishlistUiState, onOpenItem: (Long) -> Unit) {
     val extra = LocalWishExtraColors.current
     val colors = MaterialTheme.colorScheme
     val summary = state.summary
+    var showNotifications by remember { mutableStateOf(false) }
+    val notifications = remember(state.allItems) { buildWishlistNotifications(state.allItems) }
+
+    if (showNotifications) {
+        WishlistNotificationsDialog(
+            notifications = notifications,
+            onOpenItem = { id ->
+                showNotifications = false
+                onOpenItem(id)
+            },
+            onDismiss = { showNotifications = false }
+        )
+    }
 
     Column(modifier = Modifier.padding(horizontal = 20.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -597,9 +629,9 @@ private fun WishlistHeader(state: WishlistUiState) {
                 color = colors.onBackground,
                 modifier = Modifier.weight(1f)
             )
-            WatchStatusPill(
-                count = summary.itemCount,
-                checkFailed = summary.checkFailedCount
+            NotificationButton(
+                count = notifications.size,
+                onClick = { showNotifications = true }
             )
         }
 
@@ -635,35 +667,147 @@ private fun WishlistHeader(state: WishlistUiState) {
 }
 
 @Composable
-private fun WatchStatusPill(count: Int, checkFailed: Int) {
+private fun NotificationButton(count: Int, onClick: () -> Unit) {
     val extra = LocalWishExtraColors.current
-    val dotColor = if (checkFailed > 0) extra.terracotta else extra.moss
-    val label = when {
-        checkFailed > 0 -> "$checkFailed to check"
-        count > 0 -> "Watching $count"
-        else -> "Ready"
-    }
-    Surface(
-        shape = CircleShape,
-        color = extra.sunken.copy(alpha = 0.55f)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+    val colors = MaterialTheme.colorScheme
+    IconButton(onClick = onClick) {
+        BadgedBox(
+            badge = {
+                if (count > 0) {
+                    Badge(
+                        containerColor = colors.primary,
+                        contentColor = colors.onPrimary
+                    ) {
+                        Text(if (count > 99) "99+" else count.toString())
+                    }
+                }
+            }
         ) {
-            Box(
-                modifier = Modifier
-                    .size(6.dp)
-                    .background(dotColor, CircleShape)
-            )
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.6.sp),
-                color = extra.muted
+            Icon(
+                imageVector = if (count > 0) Icons.Rounded.Notifications else Icons.Rounded.NotificationsNone,
+                contentDescription = if (count > 0) "Notifications, $count" else "Notifications",
+                tint = if (count > 0) colors.onSurface else extra.muted
             )
         }
     }
+}
+
+private fun buildWishlistNotifications(items: List<ItemWithStats>): List<WishlistNotification> {
+    val out = mutableListOf<WishlistNotification>()
+    items.forEach { item ->
+        val price = item.price
+        val currency = item.item.currencyCode
+        val target = item.item.targetPrice
+        when {
+            target != null && price != null && price <= target + 0.005 -> out += WishlistNotification(
+                id = item.item.id,
+                title = item.item.title,
+                detail = "Target reached · ${formatMoney(price, currency)}",
+                tone = com.wishwell.app.ui.components.BadgeTone.GOOD
+            )
+            item.isAtLowest -> out += WishlistNotification(
+                id = item.item.id,
+                title = item.item.title,
+                detail = "All-time low · ${formatMoney(price ?: 0.0, currency)}",
+                tone = com.wishwell.app.ui.components.BadgeTone.LOW
+            )
+            item.isOnSale || (item.discountPercent ?: 0) >= 1 -> out += WishlistNotification(
+                id = item.item.id,
+                title = item.item.title,
+                detail = buildString {
+                    item.discountPercent?.let { append("-$it%") }
+                    if (price != null) {
+                        if (isNotEmpty()) append(" · ")
+                        append(formatMoney(price, currency))
+                    }
+                    if (isEmpty()) append("On sale")
+                },
+                tone = com.wishwell.app.ui.components.BadgeTone.GOOD
+            )
+            item.item.lastCheckFailed -> out += WishlistNotification(
+                id = item.item.id,
+                title = item.item.title,
+                detail = "Price check failed",
+                tone = com.wishwell.app.ui.components.BadgeTone.HIGH
+            )
+        }
+    }
+    return out.sortedWith(
+        compareBy<WishlistNotification> {
+            when (it.tone) {
+                com.wishwell.app.ui.components.BadgeTone.HIGH -> 0
+                com.wishwell.app.ui.components.BadgeTone.GOOD -> 1
+                com.wishwell.app.ui.components.BadgeTone.LOW -> 2
+                com.wishwell.app.ui.components.BadgeTone.NEUTRAL -> 3
+            }
+        }.thenBy { it.title.lowercase() }
+    )
+}
+
+@Composable
+private fun WishlistNotificationsDialog(
+    notifications: List<WishlistNotification>,
+    onOpenItem: (Long) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val colors = MaterialTheme.colorScheme
+    val extra = LocalWishExtraColors.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = colors.surface,
+        title = { Text(if (notifications.isEmpty()) "No notifications" else "Notifications") },
+        text = {
+            if (notifications.isEmpty()) {
+                Text(
+                    "Price drops, target hits, all-time lows, and check issues will show up here.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = extra.muted
+                )
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(360.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    notifications.forEach { n ->
+                        key("notif-${n.id}-${n.detail}") {
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .clickable { onOpenItem(n.id) },
+                            shape = RoundedCornerShape(14.dp),
+                            color = extra.sunken.copy(alpha = 0.45f)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        n.title,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = colors.onSurface,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Spacer(Modifier.height(4.dp))
+                                    DealBadge(n.detail, n.tone)
+                                }
+                            }
+                        }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Close") }
+        }
+    )
 }
 
 @Composable
