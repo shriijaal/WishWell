@@ -44,7 +44,6 @@ import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.LocalOffer
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SwapVert
-import androidx.compose.material.icons.automirrored.rounded.TrendingDown
 import androidx.compose.material.icons.automirrored.rounded.ViewList
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.NotificationsNone
@@ -74,6 +73,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalViewConfiguration
@@ -816,77 +819,127 @@ private fun DashboardValueCard(summary: WishlistSummary) {
     val extra = LocalWishExtraColors.current
     val hasValue = summary.trackedValue > 0.0
     val savings = summary.belowPeak
+    val shape = RoundedCornerShape(24.dp)
+    val sandLight = Color(0xFFF6F0E3)
+    val sandMid = extra.sunken
+    val sandDeep = Color(0xFFE8DECC)
+    val ink = if (extra.isDark) colors.onSurface else Color(0xFF2A241B)
+    val subInk = if (extra.isDark) extra.muted else Color(0xFF6B6254)
 
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        color = colors.primary
-    ) {
-        Box(modifier = Modifier.fillMaxWidth()) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Rounded.TrendingDown,
-                contentDescription = null,
-                tint = colors.onPrimary.copy(alpha = 0.10f),
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .offset(x = 16.dp, y = (-12).dp)
-                    .size(118.dp)
-            )
-            Column(modifier = Modifier.padding(20.dp)) {
-                Text(
-                    text = "TRACKED VALUE",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = colors.onPrimary.copy(alpha = 0.72f)
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = if (hasValue) formatMoney(summary.trackedValue, summary.currencyCode)
-                    else "${summary.itemCount}",
-                    style = MaterialTheme.typography.displayMedium,
-                    color = colors.onPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(Modifier.height(10.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = if (hasValue) {
-                            "${summary.itemCount} item${if (summary.itemCount == 1) "" else "s"}"
-                        } else {
-                            "item${if (summary.itemCount == 1) "" else "s"} saved"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.onPrimary.copy(alpha = 0.78f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .drawBehind {
+                val accent = colors.primary.copy(alpha = if (extra.isDark) 0.18f else 0.10f)
+                val baseTop = if (extra.isDark) Color(0xFF262820) else sandLight
+                val baseBottom = if (extra.isDark) Color(0xFF1C1F18) else sandDeep
+                drawRect(
+                    brush = Brush.linearGradient(
+                        colors = listOf(baseTop, sandMid.copy(alpha = if (extra.isDark) 0.55f else 0.92f), baseBottom),
+                        start = Offset(0f, 0f),
+                        end = Offset(size.width * 0.9f, size.height)
                     )
-                    if (savings >= 1.0) {
-                        val chipBg = if (extra.isDark) colors.onPrimary else extra.lime
-                        val chipFg = if (extra.isDark) colors.primary else extra.limeInk
-                        Surface(shape = CircleShape, color = chipBg) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Rounded.TrendingDown,
-                                    contentDescription = null,
-                                    tint = chipFg,
-                                    modifier = Modifier.size(12.dp)
-                                )
-                                Text(
-                                    text = "${formatMoney(savings, summary.currencyCode)} saved",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = chipFg,
-                                    maxLines = 1
-                                )
-                            }
+                )
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(accent, Color.Transparent),
+                        center = Offset(size.width * 0.88f, size.height * 0.15f),
+                        radius = size.width * 0.75f
+                    )
+                )
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = if (extra.isDark) 0.10f else 0.55f),
+                            Color.Transparent,
+                            Color.Black.copy(alpha = if (extra.isDark) 0.12f else 0.04f)
+                        )
+                    )
+                )
+                val grain = if (extra.isDark) Color.White else Color(0xFF6E6252)
+                val step = 6.dp.toPx()
+                var y = 0f
+                var row = 0
+                while (y < size.height) {
+                    var x = if (row % 2 == 0) 0f else step * 0.5f
+                    var col = 0
+                    while (x < size.width) {
+                        val n = ((row * 73856093) xor (col * 19349663) xor 83492791) and 31
+                        if (n < 7) {
+                            val a = if (extra.isDark) 0.018f + (n * 0.003f) else 0.028f + (n * 0.004f)
+                            drawCircle(
+                                color = grain.copy(alpha = a),
+                                radius = 0.9.dp.toPx() + (n % 3) * 0.15.dp.toPx(),
+                                center = Offset(x + (n % 5) * 0.35f, y + (n % 4) * 0.35f)
+                            )
                         }
+                        x += step
+                        col++
+                    }
+                    y += step
+                    row++
+                }
+            }
+            .border(
+                BorderStroke(
+                    1.dp,
+                    Brush.linearGradient(
+                        listOf(
+                            Color.White.copy(alpha = if (extra.isDark) 0.22f else 0.75f),
+                            extra.hairline.copy(alpha = if (extra.isDark) 0.35f else 0.45f),
+                            colors.primary.copy(alpha = if (extra.isDark) 0.18f else 0.12f)
+                        )
+                    )
+                ),
+                shape
+            )
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Text(
+                text = "TRACKED VALUE",
+                style = MaterialTheme.typography.labelSmall,
+                color = subInk
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = if (hasValue) formatMoney(summary.trackedValue, summary.currencyCode)
+                else "${summary.itemCount}",
+                style = MaterialTheme.typography.displayMedium,
+                color = ink,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = if (hasValue) {
+                        "${summary.itemCount} item${if (summary.itemCount == 1) "" else "s"}"
+                    } else {
+                        "item${if (summary.itemCount == 1) "" else "s"} saved"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = subInk,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                if (savings >= 1.0) {
+                    Surface(
+                        shape = CircleShape,
+                        color = colors.primary.copy(alpha = if (extra.isDark) 0.22f else 0.14f),
+                        border = BorderStroke(1.dp, colors.primary.copy(alpha = if (extra.isDark) 0.30f else 0.18f))
+                    ) {
+                        Text(
+                            text = "${formatMoney(savings, summary.currencyCode)} saved",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (extra.isDark) colors.primary else colors.onSurface,
+                            maxLines = 1,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                        )
                     }
                 }
             }
