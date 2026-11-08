@@ -686,12 +686,15 @@ fun RollingPriceText(
         return
     }
 
-    var displayed by remember { mutableStateOf(scrambleDigits(text)) }
+    var hasLaunchedRoll by remember { mutableStateOf(false) }
+    var displayed by remember { mutableStateOf(if (shouldRouletteRoll(text)) scrambleDigits(text) else text) }
     LaunchedEffect(text) {
-        val steps = 10
-        repeat(steps) { i ->
-            displayed = scrambleDigits(text)
-            delay((28L + i * 9L))
+        if (!hasLaunchedRoll && shouldRouletteRoll(text)) {
+            hasLaunchedRoll = true
+            repeat(10) { i ->
+                displayed = scrambleDigits(text)
+                delay((28L + i * 9L))
+            }
         }
         displayed = text
     }
