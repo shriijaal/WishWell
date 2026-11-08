@@ -693,6 +693,8 @@ class ProductScraper(
         val host = runCatching { java.net.URI(pageUrl).host?.lowercase().orEmpty() }.getOrElse { "" }
         val path = runCatching { java.net.URI(pageUrl).path.orEmpty() }.getOrElse { "" }
 
+        extractJeeveePricing(html, host)?.let { return it }
+
         // DBS+/Next.js storefronts (e.g. sharmazacoustic.com): /product/<id> with RSC-escaped JSON
         val productId = Regex("""/product/(\d+)""").find(path)?.groupValues?.getOrNull(1)
         if (productId != null) {
@@ -735,6 +737,71 @@ class ProductScraper(
             }
         }
         return null
+    }
+
+    private fun extractJeeveePricing(html: String, host: String): ScriptPricing? {
+        if (!host.contains("jeevee.")) return null
+        val nextData = Regex("""<script[^>]+id=["']__NEXT_DATA__["'][^>]*>(.*?)</script>""", RegexOption.DOT_MATCHES_ALL)
+            .find(html)?.groupValues?.getOrNull(1)?.trim()
+        if (nextData.isNullOrEmpty()) return null
+        val root = runCatching { JSONObject(nextData) }.getOrNull() ?: return null
+        val data = root.optJSONObject("props")?.optJSONObject("pageProps")?.optJSONObject("data") ?: return null
+
+        fun optDouble(obj: JSONObject?, key: String): Double? {
+            if (obj == null || !obj.has(key) || obj.isNull(key)) return null
+            return MoneyParser.parse(obj.opt(key)?.toString())
+        }
+        fun round(v: Double?): Double? = v?.let { kotlin.math.round(it * 100.0) / 100.0 }?.takeIf { it > 0.0 }
+
+        val info = data.optJSONArray("product_information")?.optJSONObject(0)
+        val mrp = optDouble(info, "price") ?: optDouble(data, "price")
+        if (mrp == null || mrp <= 0.0) return null
+
+        val discountPct = optDouble(info?.optJSONObject("discount_object"), "discount")
+            ?: optDouble(info, "discount")
+            ?: optDouble(data.optJSONObject("discount_object"), "discount")
+            ?: optDouble(data, "discount")
+
+        val explicitSale = optDouble(info, "selling_price")
+            ?: optDouble(info, "discounted_price")
+            ?: optDouble(info, "current_price")
+            ?: optDouble(info, "sale_price")
+            ?: optDouble(info, "offer_price")
+            ?: optDouble(data, "selling_price")
+            ?: optDouble(data, "discounted_price")
+            ?: optDouble(data, "current_price")
+
+        val sale = when {
+            explicitSale != null && explicitSale > 0.0 && explicitSale < mrp - 0.01 -> explicitSale
+            discountPct != null && discountPct > 0.0 && discountPct < 100.0 -> {
+                val computed = mrp * (1.0 - discountPct / 100.0)
+                if (computed > 0.0 && computed < mrp - 0.01) computed else null
+            }
+            else -> null
+        }
+
+        val (price, listPrice) = if (sale != null) sale to mrp else mrp to null
+        val image = data.optJSONArray("image")?.optJSONObject(0)?.let { img ->
+            img.optString("1920").takeIf { it.isNotBlank() }
+                ?: img.optString("1024").takeIf { it.isNotBlank() }
+                ?: img.optString("512").takeIf { it.isNotBlank() }
+        } ?: info?.optJSONArray("image")?.optJSONObject(0)?.let { img ->
+            img.optString("1920").takeIf { it.isNotBlank() }
+                ?: img.optString("1024").takeIf { it.isNotBlank() }
+        }
+        val brand = data.optJSONObject("brand")?.optString("name")?.takeIf { it.isNotBlank() }
+        val title = data.optString("label").takeIf { it.isNotBlank() }
+            ?: data.optString("name").takeIf { it.isNotBlank() }
+
+        return ScriptPricing(
+            title = title,
+            imageUrl = image,
+            imageUrls = listOfNotNull(image),
+            price = round(price),
+            listPrice = round(listPrice),
+            currencyCode = "NPR",
+            brand = brand
+        )
     }
 
     private fun extractScriptPricing(document: Document, pageUrl: String = ""): ScriptPricing? {
