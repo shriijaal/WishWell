@@ -88,7 +88,7 @@ class ProductScraper(
         val rawTitle = jsonLdTitle ?: ogTitle ?: metaTitle ?: htmlTitle
         val storeName = stores.displayNameForHost(host)
 
-        val scriptData = extractScriptPricing(document)
+        val scriptData = extractScriptPricing(document, finalUrl)
         val imageUrls = extractImageUrls(jsonLd, document, scriptData?.imageUrls ?: emptyList())
 
         val metaPrice = document.metaContent("product:price:amount")
@@ -689,8 +689,58 @@ class ProductScraper(
         }.getOrNull()
     }
 
-    private fun extractScriptPricing(document: Document): ScriptPricing? {
+    private fun extractTargetedScriptPricing(html: String, pageUrl: String): ScriptPricing? {
+        val host = runCatching { java.net.URI(pageUrl).host?.lowercase().orEmpty() }.getOrElse { "" }
+        val path = runCatching { java.net.URI(pageUrl).path.orEmpty() }.getOrElse { "" }
+
+        // DBS+/Next.js storefronts (e.g. sharmazacoustic.com): /product/<id> with RSC-escaped JSON
+        val productId = Regex("""/product/(\d+)""").find(path)?.groupValues?.getOrNull(1)
+        if (productId != null) {
+            val idPatterns = listOf(
+                Regex("""\\"id\\"\\s*:\\s*\\"$productId\\""""),
+                Regex(""""id"\s*:\s*"$productId""""),
+                Regex("""\\"id\\"\\s*:\\s*$productId\b"""),
+                Regex(""""id"\s*:\s*$productId\b""")
+            )
+            for (idPattern in idPatterns) {
+                val match = idPattern.find(html) ?: continue
+                val start = (match.range.first - 120).coerceAtLeast(0)
+                val end = (match.range.last + 3500).coerceAtMost(html.length)
+                val window = html.substring(start, end)
+                fun num(field: String): Double? {
+                    val p = Regex("""\\?"$field\\?"\s*:\s*"?([0-9][0-9,]*(?:\.[0-9]+)?)"?""")
+                    return p.findAll(window).mapNotNull { MoneyParser.parse(it.groupValues[1]) }
+                        .firstOrNull { it > 0.0 }
+                }
+                val name = Regex("""\\?"name\\?"\s*:\s*\\?"((?:\\.|[^"\\])*)\\?"""").find(window)
+                    ?.groupValues?.getOrNull(1)
+                    ?.let(::unescapeJsString)
+                    ?.replace("\\\"", "\"")
+                    ?.trim()
+                    ?.takeIf { it.length in 2..180 && !it.equals("null", true) }
+                val sale = num("price") ?: num("salePrice") ?: num("sellingPrice") ?: num("currentPrice")
+                val list = num("originalPrice") ?: num("compareAtPrice") ?: num("regularPrice") ?: num("listPrice")
+                if (sale != null) {
+                    val fixedList = if (list != null && list > sale + 0.01) list else null
+                    return ScriptPricing(
+                        title = name,
+                        imageUrl = null,
+                        imageUrls = emptyList(),
+                        price = sale,
+                        listPrice = fixedList,
+                        currencyCode = if (host.contains("sharmazacoustic")) "NPR" else null,
+                        brand = null
+                    )
+                }
+            }
+        }
+        return null
+    }
+
+    private fun extractScriptPricing(document: Document, pageUrl: String = ""): ScriptPricing? {
         val html = document.outerHtml()
+
+        extractTargetedScriptPricing(html, pageUrl)?.let { return it }
         // Daraz/Lazada: pdpTrackingData = "{\"pdt_price\":\"Rs. 4,065\",...}"
         val tracking = Regex("""pdpTrackingData\s*=\s*"((?:\\.|[^"\\])*)"""")
             .find(html)?.groupValues?.getOrNull(1)?.let(::unescapeJsString)
