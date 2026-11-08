@@ -406,7 +406,7 @@ private fun ItemDetailContent(
             }
 
             Spacer(Modifier.height(14.dp))
-            Row(verticalAlignment = Alignment.Bottom) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = formatMoney(detail.price, currency),
                     style = MaterialTheme.typography.displayLarge,

@@ -164,15 +164,16 @@ fun categoryIcon(name: String?): ImageVector = when (name?.trim()?.lowercase()) 
 @Composable
 fun DealBadge(text: String, tone: BadgeTone = BadgeTone.GOOD) {
     val extra = LocalWishExtraColors.current
+    val colors = MaterialTheme.colorScheme
     val background = when (tone) {
         BadgeTone.LOW -> extra.lime
-        BadgeTone.GOOD -> extra.moss
+        BadgeTone.GOOD -> colors.primary
         BadgeTone.HIGH -> extra.terracotta
         BadgeTone.NEUTRAL -> extra.sunken
     }
     val foreground = when (tone) {
         BadgeTone.LOW -> extra.limeInk
-        BadgeTone.GOOD -> Color(0xFFFFFCF4)
+        BadgeTone.GOOD -> colors.onPrimary
         BadgeTone.HIGH -> Color(0xFFFFFCF4)
         BadgeTone.NEUTRAL -> extra.muted
     }

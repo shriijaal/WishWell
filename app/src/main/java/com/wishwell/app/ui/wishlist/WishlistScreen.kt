@@ -150,12 +150,7 @@ fun WishlistScreen(
     var showReorderSheet by remember { mutableStateOf(false) }
     var revealedItemId by remember { mutableStateOf<Long?>(null) }
     LaunchedEffect(state.selectionMode) {
-        if (state.selectionMode) {
-            revealedItemId = null
-            showReorderSheet = true
-        } else {
-            showReorderSheet = false
-        }
+        if (state.selectionMode) revealedItemId = null else showReorderSheet = false
     }
     LaunchedEffect(listState.isScrollInProgress) { if (listState.isScrollInProgress) revealedItemId = null }
 
@@ -705,6 +700,7 @@ private fun NotificationButton(count: Int, onClick: () -> Unit) {
             badge = {
                 if (count > 0) {
                     Badge(
+                        modifier = Modifier.offset(x = (-4).dp, y = 4.dp),
                         containerColor = colors.primary,
                         contentColor = colors.onPrimary
                     ) {
@@ -1297,7 +1293,7 @@ private fun FilterBar(
         }
 
         WishPill(
-            text = if (state.summary.onSaleCount > 0) "On sale Â· ${state.summary.onSaleCount}" else "On sale",
+            text = if (state.summary.onSaleCount > 0) "On sale · ${state.summary.onSaleCount}" else "On sale",
             selected = onSale,
             onClick = { onAttention(if (onSale) AttentionFilter.ALL else AttentionFilter.ON_SALE) },
             leadingIcon = Icons.Rounded.LocalOffer

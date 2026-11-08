@@ -96,12 +96,7 @@ fun PriceTrackingScreen(
     var revealedItemId by remember { mutableStateOf<Long?>(null) }
     val listState = rememberLazyListState()
     LaunchedEffect(state.selectionMode) {
-        if (state.selectionMode) {
-            revealedItemId = null
-            showReorderSheet = true
-        } else {
-            showReorderSheet = false
-        }
+        if (state.selectionMode) revealedItemId = null else showReorderSheet = false
     }
     LaunchedEffect(listState.isScrollInProgress) { if (listState.isScrollInProgress) revealedItemId = null }
 

@@ -100,18 +100,6 @@ fun ReorderItemsSheet(
                         color = extra.muted
                     )
                 }
-                TextButton(
-                    onClick = { onSave(ordered.map { it.item.id }) },
-                    enabled = ordered.isNotEmpty()
-                ) {
-                    Text("Save", color = colors.primary)
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
                 TextButton(onClick = onSelectAll) {
                     Text("Select all", color = colors.primary)
                 }
@@ -124,7 +112,7 @@ fun ReorderItemsSheet(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(420.dp)
+                        .height(380.dp)
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
@@ -212,6 +200,21 @@ fun ReorderItemsSheet(
                     }
                     Spacer(Modifier.height(6.dp))
                 }
+            }
+            Spacer(Modifier.height(14.dp))
+            TextButton(
+                onClick = { onSave(ordered.map { it.item.id }) },
+                enabled = ordered.isNotEmpty(),
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                    containerColor = colors.primary.copy(alpha = 0.12f),
+                    contentColor = colors.primary,
+                    disabledContainerColor = extra.sunken.copy(alpha = 0.35f),
+                    disabledContentColor = extra.muted
+                )
+            ) {
+                Text("Save order", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(vertical = 4.dp))
             }
         }
     }
