@@ -109,7 +109,8 @@ fun WishPill(
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    leadingIcon: ImageVector? = null
+    leadingIcon: ImageVector? = null,
+    trailingIcon: ImageVector? = null
 ) {
     val colors = MaterialTheme.colorScheme
     val extra = LocalWishExtraColors.current
@@ -136,8 +137,17 @@ fun WishPill(
                 text = text,
                 style = MaterialTheme.typography.labelLarge,
                 color = if (selected) colors.onPrimary else colors.onSurface,
-                maxLines = 1
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
+            if (trailingIcon != null) {
+                Icon(
+                    imageVector = trailingIcon,
+                    contentDescription = null,
+                    tint = if (selected) colors.onPrimary else extra.muted,
+                    modifier = Modifier.size(14.dp)
+                )
+            }
         }
     }
 }

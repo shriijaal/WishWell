@@ -1,6 +1,8 @@
 package com.wishwell.app.ui.wishlist
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -21,7 +23,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -30,12 +31,15 @@ import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.DriveFileMove
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.LocalOffer
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material.icons.automirrored.rounded.ViewList
@@ -171,16 +175,11 @@ fun WishlistScreen(
                     onSortChange = viewModel::setSort
                 )
             }
-            item(key = "attention") {
-                AttentionFilters(
+            item(key = "filters") {
+                FilterBar(
                     state = state,
-                    onSelect = viewModel::setAttentionFilter
-                )
-            }
-            item(key = "chips") {
-                CategoryChips(
-                    state = state,
-                    onSelect = viewModel::setCategory
+                    onCategory = viewModel::setCategory,
+                    onAttention = viewModel::setAttentionFilter
                 )
             }
             item(key = "count") {
@@ -800,34 +799,86 @@ private fun LazyListScope.gridRows(
 }
 
 @Composable
-private fun AttentionFilters(
+private fun FilterBar(
     state: WishlistUiState,
-    onSelect: (AttentionFilter) -> Unit
+    onCategory: (Long?) -> Unit,
+    onAttention: (AttentionFilter) -> Unit
 ) {
-    val options = buildList {
-        add(AttentionFilter.ALL)
-        if (state.summary.onSaleCount > 0) add(AttentionFilter.ON_SALE)
-        if (state.summary.atLowCount > 0) add(AttentionFilter.AT_LOW)
-        if (state.summary.belowTargetCount > 0) add(AttentionFilter.BELOW_TARGET)
-        if (state.summary.checkFailedCount > 0) add(AttentionFilter.CHECK_FAILED)
+    var expanded by remember { mutableStateOf(false) }
+    val hasUnsorted = state.allItems.any { it.item.categoryId == null }
+    val activeCategory = state.categories.firstOrNull { it.category.id == state.categoryId }?.category
+    val categoryLabel = when {
+        state.categoryId == -1L -> "Unsorted"
+        activeCategory != null -> activeCategory.name
+        else -> "All items"
     }
-    if (options.size <= 1) return
+    val categoryGlyph = if (state.categoryId == -1L) Icons.Rounded.Category else categoryIcon(activeCategory?.name)
+    val onSale = state.attentionFilter == AttentionFilter.ON_SALE
 
-    LazyRow(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 12.dp),
-        contentPadding = PaddingValues(horizontal = 20.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+            .horizontalScroll(rememberScrollState())
+            .padding(start = 20.dp, end = 20.dp, top = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        items(options, key = { it.name }) { filter ->
+        Box {
             WishPill(
-                text = filter.label,
-                selected = state.attentionFilter == filter,
-                onClick = { onSelect(filter) }
+                text = categoryLabel,
+                selected = state.categoryId != null,
+                onClick = { expanded = true },
+                leadingIcon = categoryGlyph,
+                trailingIcon = Icons.Rounded.ExpandMore
             )
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                DropdownMenuItem(
+                    text = { Text("All items") },
+                    onClick = {
+                        expanded = false
+                        onCategory(null)
+                    },
+                    leadingIcon = {
+                        Icon(Icons.Rounded.Category, contentDescription = null, modifier = Modifier.size(18.dp))
+                    }
+                )
+                state.categories.forEach { category ->
+                    DropdownMenuItem(
+                        text = { Text(category.category.name) },
+                        onClick = {
+                            expanded = false
+                            onCategory(category.category.id)
+                        },
+                        leadingIcon = {
+                            Icon(
+                                categoryIcon(category.category.name),
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    )
+                }
+                if (hasUnsorted) {
+                    DropdownMenuItem(
+                        text = { Text("Unsorted") },
+                        onClick = {
+                            expanded = false
+                            onCategory(-1L)
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Rounded.Category, contentDescription = null, modifier = Modifier.size(18.dp))
+                        }
+                    )
+                }
+            }
         }
-        item(key = "attn-end") { Spacer(Modifier.width(4.dp)) }
+
+        WishPill(
+            text = if (state.summary.onSaleCount > 0) "On sale · ${state.summary.onSaleCount}" else "On sale",
+            selected = onSale,
+            onClick = { onAttention(if (onSale) AttentionFilter.ALL else AttentionFilter.ON_SALE) },
+            leadingIcon = Icons.Rounded.LocalOffer
+        )
     }
 }
 
@@ -939,46 +990,3 @@ private fun WishlistGridCard(
     }
 }
 
-@Composable
-private fun CategoryChips(
-    state: WishlistUiState,
-    onSelect: (Long?) -> Unit
-) {
-    val hasUnsorted = state.allItems.any { it.item.categoryId == null }
-
-    LazyRow(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 14.dp),
-        contentPadding = PaddingValues(horizontal = 20.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        item(key = "all") {
-            WishPill(
-                text = "All",
-                selected = state.categoryId == null,
-                onClick = { onSelect(null) }
-            )
-        }
-        items(state.categories, key = { it.category.id }) { category ->
-            WishPill(
-                text = category.category.name,
-                leadingIcon = categoryIcon(category.category.name),
-                selected = state.categoryId == category.category.id,
-                onClick = { onSelect(category.category.id) }
-            )
-        }
-        if (hasUnsorted) {
-            item(key = "unsorted") {
-                WishPill(
-                    text = "Unsorted",
-                    selected = state.categoryId == -1L,
-                    onClick = { onSelect(-1L) }
-                )
-            }
-        }
-        item(key = "spacer-end") {
-            Spacer(Modifier.width(4.dp))
-        }
-    }
-}
