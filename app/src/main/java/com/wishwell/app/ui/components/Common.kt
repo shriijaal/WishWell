@@ -650,6 +650,15 @@ fun SwipeableWishCard(
     }
 }
 
+private object LaunchRollSession {
+    val startMs: Long = android.os.SystemClock.elapsedRealtime()
+    val rolled = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    fun canRoll(key: String): Boolean {
+        if (android.os.SystemClock.elapsedRealtime() - startMs > 6000L) return false
+        return rolled.add(key)
+    }
+}
+
 private fun shouldRouletteRoll(text: String): Boolean {
     if (text.none { it.isDigit() }) return false
     return text.contains("Rs", ignoreCase = true) || text.contains('₹') || text.contains('%') ||
@@ -686,11 +695,11 @@ fun RollingPriceText(
         return
     }
 
-    var hasLaunchedRoll by remember { mutableStateOf(false) }
-    var displayed by remember { mutableStateOf(if (shouldRouletteRoll(text)) scrambleDigits(text) else text) }
-    LaunchedEffect(text) {
-        if (!hasLaunchedRoll && shouldRouletteRoll(text)) {
-            hasLaunchedRoll = true
+    val rollKey = text
+    val animateNow = remember(rollKey) { LaunchRollSession.canRoll(rollKey) }
+    var displayed by remember(rollKey) { mutableStateOf(if (animateNow) scrambleDigits(text) else text) }
+    LaunchedEffect(rollKey) {
+        if (animateNow) {
             repeat(10) { i ->
                 displayed = scrambleDigits(text)
                 delay((28L + i * 9L))
