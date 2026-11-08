@@ -913,20 +913,8 @@ private fun DashboardValueCard(summary: WishlistSummary) {
             Spacer(Modifier.height(10.dp))
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(
-                    text = if (hasValue) {
-                        "${summary.itemCount} item${if (summary.itemCount == 1) "" else "s"}"
-                    } else {
-                        "item${if (summary.itemCount == 1) "" else "s"} saved"
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = subInk,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false)
-                )
                 if (savings >= 1.0) {
                     Surface(
                         shape = CircleShape,
@@ -941,6 +929,21 @@ private fun DashboardValueCard(summary: WishlistSummary) {
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                         )
                     }
+                }
+                Spacer(Modifier.weight(1f))
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = summary.itemCount.toString(),
+                        style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                        color = ink
+                    )
+                    Text(
+                        text = if (summary.itemCount == 1) "item" else "items",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = subInk
+                    )
                 }
             }
         }
