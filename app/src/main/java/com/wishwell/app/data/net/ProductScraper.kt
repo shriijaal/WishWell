@@ -694,6 +694,7 @@ class ProductScraper(
         val path = runCatching { java.net.URI(pageUrl).path.orEmpty() }.getOrElse { "" }
 
         extractJeeveePricing(html, host)?.let { return it }
+        extractIttiPricing(html, host, path, pageUrl)?.let { return it }
 
         // DBS+/Next.js storefronts (e.g. sharmazacoustic.com): /product/<id> with RSC-escaped JSON
         val productId = Regex("""/product/(\d+)""").find(path)?.groupValues?.getOrNull(1)
@@ -735,6 +736,63 @@ class ProductScraper(
                     )
                 }
             }
+        }
+        return null
+    }
+
+    private fun extractIttiPricing(html: String, host: String, path: String, pageUrl: String): ScriptPricing? {
+        if (!host.contains("itti.com.np")) return null
+        val slug = path.trim('/').substringAfterLast('/').takeIf { it.length > 3 }
+        fun parsePriceObject(window: String): Pair<Double, Double?>? {
+            val mark = Regex("""\\?"mark_price\\?"\s*:\s*"?([0-9][0-9,]*(?:\.[0-9]+)?)"?""")
+                .findAll(window).mapNotNull { MoneyParser.parse(it.groupValues[1]) }.firstOrNull { it > 0.0 }
+            val selling = Regex("""\\?"selling_price\\?"\s*:\s*"?([0-9][0-9,]*(?:\.[0-9]+)?)"?""")
+                .findAll(window).mapNotNull { MoneyParser.parse(it.groupValues[1]) }.firstOrNull { it > 0.0 }
+            if (selling == null) return null
+            val list = if (mark != null && mark > selling + 0.01) mark else null
+            return selling to list
+        }
+        val anchors = buildList {
+            if (slug != null) {
+                Regex(Regex.escape(slug)).findAll(html).take(6).forEach { add(it.range.first) }
+            }
+            Regex("""["']?slug["']?\s*:\s*\\?"${Regex.escape(slug.orEmpty())}\\?"""", RegexOption.IGNORE_CASE)
+                .findAll(html).take(4).forEach { add(it.range.first) }
+        }.filter { it >= 0 }.distinct()
+        for (anchor in anchors) {
+            val start = (anchor - 200).coerceAtLeast(0)
+            val end = (anchor + 8000).coerceAtMost(html.length)
+            parsePriceObject(html.substring(start, end))?.let { (sale, list) ->
+                val name = Regex("""\\?"(?:name|title|pdt_name)\\?"\s*:\s*\\?"((?:\\.|[^"\\])*)\\?"""")
+                    .find(html.substring(start, (anchor + 2500).coerceAtMost(html.length)))
+                    ?.groupValues?.getOrNull(1)
+                    ?.let(::unescapeJsString)?.replace("\\\"", "\"")?.trim()
+                    ?.takeIf { it.length in 2..180 && !it.equals("null", true) }
+                val image = Regex("""\\?"(?:image|thumb_image|pdt_photo)\\?"\s*:\s*\\?"(https?:\\?/\\?/[^"\\\s]+)\\?"""")
+                    .find(html.substring(start, end))?.groupValues?.getOrNull(1)
+                    ?.replace("\\/", "/")
+                return ScriptPricing(
+                    title = name,
+                    imageUrl = image,
+                    imageUrls = listOfNotNull(image),
+                    price = sale,
+                    listPrice = list,
+                    currencyCode = "NPR",
+                    brand = null
+                )
+            }
+        }
+        // Fallback: any mark/selling pair (prefer plausible main-product range if slug context failed)
+        parsePriceObject(html)?.let { (sale, list) ->
+            return ScriptPricing(
+                title = null,
+                imageUrl = null,
+                imageUrls = emptyList(),
+                price = sale,
+                listPrice = list,
+                currencyCode = "NPR",
+                brand = null
+            )
         }
         return null
     }
