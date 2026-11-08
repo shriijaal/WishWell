@@ -907,7 +907,7 @@ private fun WishlistNotificationsSheet(
     }
 }
 
-private const val DASHBOARD_PAPER_SHADER = """
+private const val DASHBOARD_OCEAN_SHADER = """
 uniform float2 resolution;
 uniform float time;
 uniform float4 tintA;
@@ -915,8 +915,8 @@ uniform float4 tintB;
 uniform float intensity;
 
 float hash(float2 p) {
-    p = fract(p * float2(123.34, 456.21));
-    p += dot(p, p + 45.32);
+    p = fract(p * float2(127.1, 311.7));
+    p += dot(p, p + 34.345);
     return fract(p.x * p.y);
 }
 
@@ -936,35 +936,60 @@ float fbm(float2 p) {
     float a = 0.5;
     for (int i = 0; i < 4; i++) {
         v += a * noise(p);
-        p = p * 2.03 + float2(17.1, 9.2);
+        p = p * 2.02 + float2(13.7, 7.9);
         a *= 0.5;
     }
     return v;
 }
 
+float waveLayer(float2 p, float t, float2 dir, float freq, float amp, float speed, float sharp) {
+    float phase = dot(p, dir) * freq + t * speed;
+    float w = sin(phase);
+    return pow(w * 0.5 + 0.5, sharp) * amp;
+}
+
 half4 main(float2 fragCoord) {
     float2 uv = fragCoord / max(resolution, float2(1.0));
-    float t = time * 0.035;
-    float2 drift = float2(t * 0.6, t * 0.18);
-    float2 p = uv * float2(8.0, 5.5) + drift;
+    float t = time * 0.55;
+    float aspect = resolution.x / max(resolution.y, 1.0);
+    float2 p = float2(uv.x * aspect, uv.y);
 
-    float grain = fbm(p * 3.2);
-    float coarse = fbm(p * 1.1 + float2(3.7, 1.9));
-    float fiber = sin((uv.x * 18.0 + uv.y * 2.4 + grain * 3.0 + time * 0.06) * 6.2831);
-    fiber = fiber * 0.5 + 0.5;
-    float fiber2 = sin((uv.y * 14.0 - uv.x * 1.7 + coarse * 2.2 - time * 0.03) * 6.2831);
-    fiber2 = fiber2 * 0.5 + 0.5;
+    float n1 = fbm(p * 2.4 + float2(t * 0.08, -t * 0.05));
+    float n2 = fbm(p * 4.2 - float2(t * 0.06, t * 0.03) + n1 * 0.6);
 
-    float speck = smoothstep(0.78, 0.98, hash(floor(fragCoord * 0.45 + drift * 20.0)));
-    float paper = mix(coarse, grain, 0.55);
-    paper = mix(paper, fiber, 0.10);
-    paper = mix(paper, fiber2, 0.06);
+    float w1 = waveLayer(p + n1 * 0.18, t, normalize(float2(1.0, 0.22)), 5.8, 1.0, 1.25, 1.9);
+    float w2 = waveLayer(p + n2 * 0.12, t, normalize(float2(0.75, -0.55)), 9.5, 0.55, 1.65, 2.2);
+    float w3 = waveLayer(p + n1 * 0.10, t, normalize(float2(-0.35, 1.0)), 14.0, 0.28, 2.1, 2.8);
+    float w4 = waveLayer(p * 1.3, t, normalize(float2(1.0, -0.12)), 3.2, 0.75, 0.75, 1.5);
+    float waves = (w1 + w2 + w3 + w4) / 2.58;
 
-    float3 base = mix(tintA.rgb, tintB.rgb, uv.y * 0.65 + uv.x * 0.15);
-    float shade = (paper - 0.5) * 0.18 + (fiber - 0.5) * 0.05 - speck * 0.10;
-    float3 col = clamp(base + shade, 0.0, 1.0);
-    float alpha = intensity * (0.55 + paper * 0.20);
-    return half4(half3(col), half(clamp(alpha, 0.0, 1.0)));
+    float ripple = sin((p.x * 22.0 + n2 * 5.0 + t * 1.8) + sin(p.y * 18.0 - t * 1.2)) * 0.5 + 0.5;
+    ripple *= 0.06;
+
+    float height = clamp(waves + ripple + (n2 - 0.5) * 0.12, 0.0, 1.0);
+    float crest = smoothstep(0.62, 0.92, height);
+    float trough = smoothstep(0.18, 0.55, height);
+
+    float3 deep = mix(tintB.rgb, tintA.rgb * 0.72, 0.35);
+    float3 shallow = mix(tintA.rgb, tintB.rgb, 0.15);
+    float3 water = mix(deep, shallow, uv.y * 0.55 + height * 0.45);
+
+    float caustic = fbm(p * 6.5 + float2(t * 0.18, t * 0.10) + height * 1.2);
+    caustic = smoothstep(0.58, 0.92, caustic) * (0.18 + trough * 0.10);
+    water += float3(caustic) * mix(float3(0.55, 0.85, 1.0), tintA.rgb, 0.35);
+
+    float highlight = smoothstep(0.78, 0.98, height) * 0.22;
+    water += float3(highlight) * float3(0.85, 0.95, 1.0);
+
+    float foam = smoothstep(0.84, 0.985, height + n1 * 0.08) * (0.10 + crest * 0.18);
+    foam *= smoothstep(0.35, 0.85, n2);
+    water = mix(water, float3(0.92, 0.98, 1.0), foam);
+
+    float vignette = smoothstep(1.15, 0.15, length((uv - 0.5) * float2(aspect, 1.0)));
+    water *= 0.92 + vignette * 0.08;
+
+    float alpha = intensity * (0.62 + height * 0.22 + crest * 0.10);
+    return half4(half3(clamp(water, 0.0, 1.0)), half(clamp(alpha, 0.0, 1.0)));
 }
 """
 
@@ -987,19 +1012,19 @@ private fun DashboardValueCard(summary: WishlistSummary) {
         animationSpec = spring(dampingRatio = 0.82f, stiffness = 500f),
         label = "dashboardCardScale"
     )
-    val paperTransition = rememberInfiniteTransition(label = "dashboardPaper")
-    val paperTime by paperTransition.animateFloat(
+    val oceanTransition = rememberInfiniteTransition(label = "dashboardOcean")
+    val oceanTime by oceanTransition.animateFloat(
         initialValue = 0f,
         targetValue = 240f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 120_000, easing = LinearEasing),
+            animation = tween(durationMillis = 90_000, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
-        label = "dashboardPaperTime"
+        label = "dashboardOceanTime"
     )
-    val paperShader = remember {
+    val oceanShader = remember {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            runCatching { RuntimeShader(DASHBOARD_PAPER_SHADER) }.getOrNull()
+            runCatching { RuntimeShader(DASHBOARD_OCEAN_SHADER) }.getOrNull()
         } else null
     }
 
@@ -1039,16 +1064,16 @@ private fun DashboardValueCard(summary: WishlistSummary) {
                         )
                     )
                 )
-                val shaderDrawn = if (paperShader != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val shaderDrawn = if (oceanShader != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     runCatching {
-                        val tintA = if (extra.isDark) Color(0xFF363A30) else Color(0xFFF9F4E8)
-                        val tintB = if (extra.isDark) Color(0xFF22251E) else Color(0xFFE8DDC9)
-                        paperShader.setFloatUniform("resolution", size.width, size.height)
-                        paperShader.setFloatUniform("time", paperTime)
-                        paperShader.setFloatUniform("tintA", tintA.red, tintA.green, tintA.blue, tintA.alpha)
-                        paperShader.setFloatUniform("tintB", tintB.red, tintB.green, tintB.blue, tintB.alpha)
-                        paperShader.setFloatUniform("intensity", if (extra.isDark) 0.42f else 0.34f)
-                        drawRect(brush = ShaderBrush(paperShader))
+                        val tintA = if (extra.isDark) Color(0xFF1E6B8A) else Color(0xFF6EC6E8)
+                        val tintB = if (extra.isDark) Color(0xFF0B2E45) else Color(0xFF1F6F9E)
+                        oceanShader.setFloatUniform("resolution", size.width, size.height)
+                        oceanShader.setFloatUniform("time", oceanTime)
+                        oceanShader.setFloatUniform("tintA", tintA.red, tintA.green, tintA.blue, tintA.alpha)
+                        oceanShader.setFloatUniform("tintB", tintB.red, tintB.green, tintB.blue, tintB.alpha)
+                        oceanShader.setFloatUniform("intensity", if (extra.isDark) 0.62f else 0.52f)
+                        drawRect(brush = ShaderBrush(oceanShader))
                     }.isSuccess
                 } else false
                 if (!shaderDrawn) {
