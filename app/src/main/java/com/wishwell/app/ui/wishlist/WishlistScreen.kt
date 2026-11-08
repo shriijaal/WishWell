@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -56,11 +57,13 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
@@ -611,7 +614,7 @@ private fun WishlistHeader(state: WishlistUiState, onOpenItem: (Long) -> Unit) {
     val notifications = remember(state.allItems) { buildWishlistNotifications(state.allItems) }
 
     if (showNotifications) {
-        WishlistNotificationsDialog(
+        WishlistNotificationsSheet(
             notifications = notifications,
             onOpenItem = { id ->
                 showNotifications = false
@@ -747,70 +750,109 @@ private fun buildWishlistNotifications(items: List<ItemWithStats>): List<Wishlis
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun WishlistNotificationsDialog(
+private fun WishlistNotificationsSheet(
     notifications: List<WishlistNotification>,
     onOpenItem: (Long) -> Unit,
     onDismiss: () -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
     val extra = LocalWishExtraColors.current
-    AlertDialog(
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
+        sheetState = sheetState,
         containerColor = colors.surface,
-        title = { Text(if (notifications.isEmpty()) "No notifications" else "Notifications") },
-        text = {
+        tonalElevation = 0.dp,
+        dragHandle = {
+            Box(
+                modifier = Modifier
+                    .padding(top = 12.dp, bottom = 8.dp)
+                    .size(width = 40.dp, height = 4.dp)
+                    .clip(CircleShape)
+                    .background(extra.hairline)
+            )
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 20.dp)
+                .navigationBarsPadding()
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (notifications.isEmpty()) "No notifications" else "Notifications",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = colors.onSurface,
+                    modifier = Modifier.weight(1f)
+                )
+                if (notifications.isNotEmpty()) {
+                    Text(
+                        text = notifications.size.toString(),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = extra.muted
+                    )
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+
             if (notifications.isEmpty()) {
                 Text(
                     "Price drops, target hits, all-time lows, and check issues will show up here.",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = extra.muted
+                    color = extra.muted,
+                    modifier = Modifier.padding(bottom = 12.dp)
                 )
             } else {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(360.dp)
+                        .height(420.dp)
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     notifications.forEach { n ->
                         key("notif-${n.id}-${n.detail}") {
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(14.dp))
-                                .clickable { onOpenItem(n.id) },
-                            shape = RoundedCornerShape(14.dp),
-                            color = extra.sunken.copy(alpha = 0.45f)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .clickable { onOpenItem(n.id) },
+                                shape = RoundedCornerShape(14.dp),
+                                color = extra.sunken.copy(alpha = 0.45f)
                             ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        n.title,
-                                        style = MaterialTheme.typography.titleSmall,
-                                        color = colors.onSurface,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Spacer(Modifier.height(4.dp))
-                                    DealBadge(n.detail, n.tone)
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            n.title,
+                                            style = MaterialTheme.typography.titleSmall,
+                                            color = colors.onSurface,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Spacer(Modifier.height(4.dp))
+                                        DealBadge(n.detail, n.tone)
+                                    }
                                 }
                             }
                         }
-                        }
                     }
+                    Spacer(Modifier.height(8.dp))
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Close") }
         }
-    )
+    }
 }
 
 @Composable
