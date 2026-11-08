@@ -61,8 +61,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -654,8 +657,12 @@ fun RollingPriceText(
     textAlign: TextAlign? = null,
     textDecoration: androidx.compose.ui.text.style.TextDecoration? = null
 ) {
+    var displayed by remember { mutableStateOf("") }
+    LaunchedEffect(text) {
+        displayed = text
+    }
     AnimatedContent(
-        targetState = text,
+        targetState = displayed,
         modifier = modifier,
         transitionSpec = {
             (slideInVertically(animationSpec = spring(dampingRatio = 0.9f, stiffness = 380f)) { it / 2 } +
