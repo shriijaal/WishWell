@@ -52,6 +52,8 @@ import com.wishwell.app.ui.theme.LocalWishExtraColors
 @Composable
 fun ReorderItemsSheet(
     items: List<ItemWithStats>,
+    selectedCount: Int,
+    onSelectAll: () -> Unit,
     onSave: (List<Long>) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -93,7 +95,7 @@ fun ReorderItemsSheet(
                 Column(modifier = Modifier.weight(1f)) {
                     Text("Reorder items", style = MaterialTheme.typography.titleLarge, color = colors.onSurface)
                     Text(
-                        "Long-press the handle, then drag",
+                        "$selectedCount selected · Long-press handle to drag",
                         style = MaterialTheme.typography.bodySmall,
                         color = extra.muted
                     )
@@ -103,6 +105,15 @@ fun ReorderItemsSheet(
                     enabled = ordered.isNotEmpty()
                 ) {
                     Text("Save", color = colors.primary)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(onClick = onSelectAll) {
+                    Text("Select all", color = colors.primary)
                 }
             }
             Spacer(Modifier.height(12.dp))
