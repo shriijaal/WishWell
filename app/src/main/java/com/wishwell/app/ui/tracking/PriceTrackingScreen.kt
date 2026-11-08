@@ -121,7 +121,7 @@ fun PriceTrackingScreen(
 
                 Spacer(Modifier.height(14.dp))
                 Text(
-                    text = "Price watch.",
+                    text = "Watching price drops.",
                     style = MaterialTheme.typography.displayMedium,
                     color = colors.onBackground
                 )
