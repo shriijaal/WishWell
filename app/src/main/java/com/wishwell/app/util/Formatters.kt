@@ -8,19 +8,37 @@ import java.time.temporal.ChronoUnit
 import java.util.Currency
 import java.util.Locale
 
-fun formatMoney(amount: Double?, currencyCode: String = "USD"): String {
-    if (amount == null) return "—"
-    val format = NumberFormat.getCurrencyInstance(Locale.getDefault())
-    runCatching { format.currency = Currency.getInstance(currencyCode.uppercase()) }
-    val exact = amount % 1.0 != 0.0
-    format.maximumFractionDigits = if (exact) 2 else 0
+private fun isNpr(code: String): Boolean = code.equals("NPR", ignoreCase = true)
+
+/** Locale-aware plain number formatting (grouping, no currency symbol). */
+private fun formatAmountNumber(amount: Double, fractionDigits: Int): String {
+    val format = NumberFormat.getNumberInstance(Locale.getDefault())
+    format.maximumFractionDigits = fractionDigits
     format.minimumFractionDigits = 0
     return format.format(amount)
+}
+
+fun formatMoney(amount: Double?, currencyCode: String = "USD"): String {
+    if (amount == null) return "—"
+    val rounded = kotlin.math.round(amount * 100.0) / 100.0
+    val hasCents = kotlin.math.abs(rounded - kotlin.math.round(rounded)) >= 0.005
+    // Nepalese rupees read best as "Rs." rather than the locale-dependent NPR symbol.
+    if (isNpr(currencyCode)) {
+        return "Rs. ${formatAmountNumber(rounded, if (hasCents) 2 else 0)}"
+    }
+    val format = NumberFormat.getCurrencyInstance(Locale.getDefault())
+    runCatching { format.currency = Currency.getInstance(currencyCode.uppercase()) }
+    format.maximumFractionDigits = if (hasCents) 2 else 0
+    format.minimumFractionDigits = 0
+    return format.format(rounded)
 }
 
 /** Always two decimals, used for line items where precision matters. */
 fun formatMoneyExact(amount: Double?, currencyCode: String = "USD"): String {
     if (amount == null) return "—"
+    if (isNpr(currencyCode)) {
+        return "Rs. ${formatAmountNumber(amount, 2)}"
+    }
     val format = NumberFormat.getCurrencyInstance(Locale.getDefault())
     runCatching { format.currency = Currency.getInstance(currencyCode.uppercase()) }
     format.maximumFractionDigits = 2
@@ -60,6 +78,7 @@ fun formatRelativeDay(epochMillis: Long): String {
 }
 
 fun currencySymbol(code: String): String {
+    if (isNpr(code)) return "Rs."
     val currency = runCatching { Currency.getInstance(code.uppercase()) }.getOrNull()
         ?: return code
     return currency.symbol ?: code
@@ -70,3 +89,7 @@ fun validCurrencyOrNull(code: String): String? {
     if (clean.length != 3 || clean.any { !it.isLetter() }) return null
     return runCatching { Currency.getInstance(clean) }.getOrNull()?.currencyCode
 }
+
+/** Currency label for prose. NPR reads as "Rs. (NPR)"; others stay as their ISO code. */
+fun currencyDisplayName(code: String): String =
+    if (isNpr(code)) "Rs. (NPR)" else code.uppercase()

@@ -1,8 +1,5 @@
 package com.wishwell.app.data.model
 
-import java.text.NumberFormat
-import java.util.Currency
-
 enum class DealVerdict { ALL_TIME_LOW, GOOD, FAIR, HIGH, UNKNOWN }
 
 data class DealAssessment(
@@ -56,10 +53,5 @@ fun assessDeal(item: ItemWithStats): DealAssessment {
 
 private fun percent(fraction: Double): String = "${(fraction * 100).toInt()}%"
 
-private fun money(amount: Double, currencyCode: String): String {
-    val format = NumberFormat.getCurrencyInstance()
-    runCatching { format.currency = Currency.getInstance(currencyCode) }
-    format.maximumFractionDigits = 0
-    format.minimumFractionDigits = 0
-    return format.format(amount)
-}
+private fun money(amount: Double, currencyCode: String): String =
+    com.wishwell.app.util.formatMoney(amount, currencyCode)

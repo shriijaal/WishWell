@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.wishwell.app.data.model.CategoryWithCount
 import com.wishwell.app.data.model.ItemWithStats
 import com.wishwell.app.di.AppContainer
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -51,10 +52,12 @@ data class WishlistUiState(
     val refreshing: Boolean = false,
     val message: String? = null,
     val loading: Boolean = true,
-    val summary: WishlistSummary = WishlistSummary(0, "USD", 0.0, 0.0, 0, 0, 0, 0, false)
+    val summary: WishlistSummary = WishlistSummary(0, "USD", 0.0, 0.0, 0, 0, 0, 0, false),
+    val selectedIds: Set<Long> = emptySet()
 ) {
     val hasAnyItems: Boolean get() = allItems.isNotEmpty()
     val isFiltered: Boolean get() = query.isNotBlank() || categoryId != null || attentionFilter != AttentionFilter.ALL
+    val selectionMode: Boolean get() = selectedIds.isNotEmpty()
 }
 
 private data class Filters(
@@ -74,6 +77,7 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
     private val attentionFilter = MutableStateFlow(AttentionFilter.ALL)
     private val refreshing = MutableStateFlow(false)
     private val message = MutableStateFlow<String?>(null)
+    private val selectedIds = MutableStateFlow<Set<Long>>(emptySet())
 
     private val filters = combine(query, categoryFilter, sort, attentionFilter) { q, c, s, a ->
         Filters(q, c, s, a)
@@ -84,8 +88,9 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
         repo.observeItems(),
         repo.observeCategories(),
         filters,
-        status
-    ) { items, categories, f, s ->
+        status,
+        selectedIds
+    ) { items, categories, f, s, selected ->
         val filtered = items.filter { item ->
             val matchesQuery = f.query.isBlank() || listOf(
                 item.item.title,
@@ -115,6 +120,8 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
             matchesQuery && matchesCategory && matchesAttention
         }
 
+        val validIds = items.mapTo(mutableSetOf()) { it.item.id }
+        val prunedSelected = selected.intersect(validIds)
         WishlistUiState(
             items = sortItems(filtered, f.sort),
             allItems = items,
@@ -126,7 +133,8 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
             refreshing = s.first,
             message = s.second,
             loading = false,
-            summary = summarize(items)
+            summary = summarize(items),
+            selectedIds = prunedSelected
         )
     }.stateIn(
         scope = viewModelScope,
@@ -160,23 +168,83 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
         message.value = null
     }
 
+    private fun postMessage(text: String?, autoHideMs: Long = 4000L) {
+        message.value = text
+        if (text != null) {
+            viewModelScope.launch {
+                delay(autoHideMs)
+                if (message.value == text) message.value = null
+            }
+        }
+    }
+
+    fun enterSelection(id: Long) {
+        selectedIds.value = setOf(id)
+    }
+
+    fun toggleSelection(id: Long) {
+        val current = selectedIds.value.toMutableSet()
+        if (!current.add(id)) current.remove(id)
+        selectedIds.value = current
+    }
+
+    fun clearSelection() {
+        selectedIds.value = emptySet()
+    }
+
+    fun selectAll(ids: Collection<Long>) {
+        selectedIds.value = ids.toSet()
+    }
+
+    fun deleteItem(id: Long) {
+        viewModelScope.launch {
+            runCatching { repo.deleteItem(id) }
+                .onFailure { message.value = it.message ?: "Couldn't remove that item." }
+            selectedIds.value = selectedIds.value - id
+        }
+    }
+
+    fun deleteSelected() {
+        val ids = selectedIds.value
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            runCatching { repo.deleteItems(ids) }
+                .onSuccess { postMessage("Removed ${ids.size} item${if (ids.size == 1) "" else "s"}.") }
+                .onFailure { postMessage(it.message ?: "Couldn't remove selected items.") }
+            selectedIds.value = emptySet()
+        }
+    }
+
+    fun moveSelectedToCategory(categoryId: Long?) {
+        val ids = selectedIds.value
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            runCatching { repo.setCategoryForItems(ids, categoryId) }
+                .onSuccess { postMessage("Moved ${ids.size} item${if (ids.size == 1) "" else "s"}.") }
+                .onFailure { postMessage(it.message ?: "Couldn't move selected items.") }
+            selectedIds.value = emptySet()
+        }
+    }
+
     fun refreshAll() {
         if (refreshing.value) return
         viewModelScope.launch {
             refreshing.value = true
             val summary = repo.refreshAll()
-            message.value = when {
-                summary.checked == 0 -> "Nothing saved yet — add something to watch."
-                summary.failed == 0 && summary.updated == 0 ->
-                    "Checked ${summary.checked} items. Prices are unchanged."
-                summary.failed == 0 ->
-                    "Checked ${summary.checked} · ${summary.updated} updated" +
-                        if (summary.lowCount > 0) " · ${summary.lowCount} at an all-time low" else ""
-                summary.failed == summary.checked ->
-                    "Couldn't read any store pages. Many retailers block price checks."
-                else ->
-                    "Checked ${summary.checked} · ${summary.failed} couldn't be read"
-            }
+            postMessage(
+                when {
+                    summary.checked == 0 -> "Nothing saved yet — add something to watch."
+                    summary.failed == 0 && summary.updated == 0 ->
+                        "Checked ${summary.checked} items. Prices are unchanged."
+                    summary.failed == 0 ->
+                        "Checked ${summary.checked} · ${summary.updated} updated" +
+                            if (summary.lowCount > 0) " · ${summary.lowCount} at an all-time low" else ""
+                    summary.failed == summary.checked ->
+                        "Couldn't read any store pages. Many retailers block price checks."
+                    else ->
+                        "Checked ${summary.checked} · ${summary.failed} couldn't be read"
+                }
+            )
             refreshing.value = false
         }
     }
@@ -184,11 +252,13 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
     fun loadDemoData() {
         viewModelScope.launch {
             val added = repo.seedDemoData()
-            message.value = if (added) {
-                "Demo list added. Delete it any time in Settings."
-            } else {
-                "You already have items saved."
-            }
+            postMessage(
+                if (added) {
+                    "Demo list added. Delete it any time in Settings."
+                } else {
+                    "You already have items saved."
+                }
+            )
         }
     }
 

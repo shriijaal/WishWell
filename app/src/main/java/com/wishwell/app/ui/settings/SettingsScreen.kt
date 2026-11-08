@@ -1,5 +1,8 @@
 package com.wishwell.app.ui.settings
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -38,6 +41,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -65,6 +69,9 @@ import com.wishwell.app.ui.theme.isCustomAccentKey
 import com.wishwell.app.ui.theme.parseHexColor
 import com.wishwell.app.util.formatDateWithYear
 import com.wishwell.app.util.formatRelativeDay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun SettingsScreen(container: AppContainer) {
@@ -77,11 +84,76 @@ fun SettingsScreen(container: AppContainer) {
     val extra = LocalWishExtraColors.current
     val colors = MaterialTheme.colorScheme
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val systemNotificationsEnabled = remember {
         NotificationManagerCompat.from(context).areNotificationsEnabled()
     }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showCustomPicker by remember { mutableStateOf(false) }
+    var backupBusy by remember { mutableStateOf(false) }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        if (backupBusy) return@rememberLauncherForActivityResult
+        scope.launch {
+            backupBusy = true
+            val result = runCatching {
+                val json = container.repository.exportBackupJson()
+                withContext(Dispatchers.IO) {
+                    context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(json) }
+                        ?: error("Couldn't open the selected file.")
+                }
+            }
+            backupBusy = false
+            viewModel.reportMessage(
+                result.fold(
+                    onSuccess = { "Backup exported." },
+                    onFailure = { it.message ?: "Couldn't export backup." }
+                )
+            )
+        }
+    }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        if (backupBusy) return@rememberLauncherForActivityResult
+        scope.launch {
+            backupBusy = true
+            val result = runCatching {
+                val text = withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                        ?: error("Couldn't read the selected file.")
+                }
+                container.repository.importBackupJson(text)
+            }
+            backupBusy = false
+            viewModel.reportMessage(
+                result.fold(
+                    onSuccess = { r ->
+                        when {
+                            r.itemsAdded == 0 && r.itemsMerged == 0 && r.categoriesAdded == 0 && r.historyPointsAdded == 0 ->
+                                "Nothing new to import."
+                            else -> buildString {
+                                append("Import complete: ")
+                                val parts = mutableListOf<String>()
+                                if (r.itemsAdded > 0) parts += "${r.itemsAdded} item${if (r.itemsAdded == 1) "" else "s"} added"
+                                if (r.itemsMerged > 0) parts += "${r.itemsMerged} merged"
+                                if (r.categoriesAdded > 0) parts += "${r.categoriesAdded} categor${if (r.categoriesAdded == 1) "y" else "ies"} added"
+                                if (r.historyPointsAdded > 0) parts += "${r.historyPointsAdded} price point${if (r.historyPointsAdded == 1) "" else "s"}"
+                                append(parts.joinToString(", ").ifBlank { "done" })
+                                append(".")
+                            }
+                        }
+                    },
+                    onFailure = { it.message ?: "Couldn't import backup." }
+                )
+            )
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -448,6 +520,43 @@ fun SettingsScreen(container: AppContainer) {
                     )
                     Spacer(Modifier.width(8.dp))
                     Text("Check all prices now", color = colors.onSurface)
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = "Backup",
+                style = MaterialTheme.typography.titleSmall,
+                color = colors.onSurface,
+                fontWeight = FontWeight.Medium
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = "Export or import your saved items, collections, and price history as a file.",
+                style = MaterialTheme.typography.labelSmall,
+                color = extra.muted
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(
+                    onClick = {
+                        val name = "wishwell-backup-${java.time.LocalDate.now()}.json"
+                        exportLauncher.launch(name)
+                    },
+                    enabled = !backupBusy,
+                    shape = CircleShape,
+                    modifier = Modifier.weight(1f),
+                    border = BorderStroke(1.dp, extra.hairline)
+                ) {
+                    Text(if (backupBusy) "Working…" else "Export", color = if (backupBusy) extra.muted else colors.onSurface)
+                }
+                OutlinedButton(
+                    onClick = { importLauncher.launch(arrayOf("application/json", "text/*", "*/*")) },
+                    enabled = !backupBusy,
+                    shape = CircleShape,
+                    modifier = Modifier.weight(1f),
+                    border = BorderStroke(1.dp, extra.hairline)
+                ) {
+                    Text(if (backupBusy) "Working…" else "Import", color = if (backupBusy) extra.muted else colors.onSurface)
                 }
             }
             Spacer(Modifier.height(8.dp))

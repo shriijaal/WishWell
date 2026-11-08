@@ -13,24 +13,33 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.DriveFileMove
 import androidx.compose.material.icons.rounded.GridView
-import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material.icons.automirrored.rounded.ViewList
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -41,6 +50,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
@@ -53,6 +63,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -67,13 +79,16 @@ import com.wishwell.app.ui.components.DealBadge
 import com.wishwell.app.ui.components.EmptyState
 import com.wishwell.app.ui.components.LoadingSpinner
 import com.wishwell.app.ui.components.NoticeBar
+import com.wishwell.app.ui.components.ConfirmDialog
 import com.wishwell.app.ui.components.ProductThumb
 import com.wishwell.app.ui.components.SectionLabel
 import com.wishwell.app.ui.components.StatTile
+import com.wishwell.app.ui.components.SwipeableWishCard
 import com.wishwell.app.ui.components.WishCard
 import com.wishwell.app.ui.components.WishPill
 import com.wishwell.app.ui.components.categoryIcon
 import com.wishwell.app.ui.theme.LocalWishExtraColors
+import com.wishwell.app.util.currencyDisplayName
 import com.wishwell.app.util.formatMoney
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -82,7 +97,8 @@ fun WishlistScreen(
     container: AppContainer,
     onOpenItem: (Long) -> Unit,
     onAddItem: () -> Unit,
-    onOpenSettings: () -> Unit
+    onEditItem: (Long) -> Unit,
+    onSelectionModeChanged: (Boolean) -> Unit = {}
 ) {
     val viewModel: WishlistViewModel = viewModel(
         factory = viewModelFactory {
@@ -94,30 +110,48 @@ fun WishlistScreen(
     var viewMode by remember { mutableStateOf("list") } // list, grid
     val listState = rememberLazyListState()
     val pullState = rememberPullToRefreshState()
+    LaunchedEffect(state.selectionMode) { onSelectionModeChanged(state.selectionMode) }
     if (pullState.isRefreshing) {
         LaunchedEffect(Unit) { viewModel.refreshAll() }
     }
     LaunchedEffect(state.refreshing) {
         if (state.refreshing) pullState.startRefresh() else pullState.endRefresh()
     }
+    var pendingDeleteId by remember { mutableStateOf<Long?>(null) }
+    var showBulkDeleteConfirm by remember { mutableStateOf(false) }
+    var showMoveDialog by remember { mutableStateOf(false) }
+    var revealedItemId by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(state.selectionMode) { if (state.selectionMode) revealedItemId = null }
+    LaunchedEffect(listState.isScrollInProgress) { if (listState.isScrollInProgress) revealedItemId = null }
 
+    val viewConfig = LocalViewConfiguration.current
     Box(
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()
             .nestedScroll(pullState.nestedScrollConnection)
+            .pointerInput(revealedItemId) {
+                if (revealedItemId == null) return@pointerInput
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val up = waitForUpOrCancellation()
+                    if (up != null && revealedItemId != null) {
+                        val moved = (up.position - down.position).getDistance()
+                        if (moved < viewConfig.touchSlop && !up.isConsumed) revealedItemId = null
+                    }
+                }
+            }
     ) {
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(top = 6.dp, bottom = 120.dp)
+        contentPadding = PaddingValues(top = 6.dp, bottom = if (state.selectionMode) 190.dp else 120.dp)
     ) {
         item(key = "header") {
-            WishlistHeader(
-                state = state,
-                onRefresh = viewModel::refreshAll
-            )
+            WishlistHeader(state = state)
         }
+
+
 
         state.message?.let { notice ->
             item(key = "notice") {
@@ -249,16 +283,40 @@ fun WishlistScreen(
                             }
                         )
                     }
-                    gridRows(items = attention, keyPrefix = "attn", onOpenItem = onOpenItem)
+                    gridRows(
+                        items = attention,
+                        keyPrefix = "attn",
+                        selectedIds = state.selectedIds,
+                        selectionMode = state.selectionMode,
+                        onOpenItem = onOpenItem,
+                        onToggleSelection = viewModel::toggleSelection,
+                        onEnterSelection = viewModel::enterSelection
+                    )
                     item(key = "section-library") {
                         SectionLabel(
                             text = "Library",
                             modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 4.dp)
                         )
                     }
-                    gridRows(items = rest, keyPrefix = "lib", onOpenItem = onOpenItem)
+                    gridRows(
+                        items = rest,
+                        keyPrefix = "lib",
+                        selectedIds = state.selectedIds,
+                        selectionMode = state.selectionMode,
+                        onOpenItem = onOpenItem,
+                        onToggleSelection = viewModel::toggleSelection,
+                        onEnterSelection = viewModel::enterSelection
+                    )
                 } else {
-                    gridRows(items = state.items, keyPrefix = "grid", onOpenItem = onOpenItem)
+                    gridRows(
+                        items = state.items,
+                        keyPrefix = "grid",
+                        selectedIds = state.selectedIds,
+                        selectionMode = state.selectionMode,
+                        onOpenItem = onOpenItem,
+                        onToggleSelection = viewModel::toggleSelection,
+                        onEnterSelection = viewModel::enterSelection
+                    )
                 }
             }
 
@@ -280,9 +338,28 @@ fun WishlistScreen(
                         )
                     }
                     items(attention, key = { "attn-${it.item.id}" }) { item ->
-                        WishCard(
+                        val id = item.item.id
+                        val selected = id in state.selectedIds
+                        SwipeableWishCard(
                             item = item,
-                            onClick = { onOpenItem(item.item.id) },
+                            onClick = {
+                                when {
+                                    revealedItemId != null && revealedItemId != id -> revealedItemId = null
+                                    state.selectionMode -> viewModel.toggleSelection(id)
+                                    else -> onOpenItem(id)
+                                }
+                            },
+                            onEdit = { onEditItem(id) },
+                            onRemove = { pendingDeleteId = id },
+                            selected = selected,
+                            selectionMode = state.selectionMode,
+                            onLongClick = {
+                                revealedItemId = null
+                                if (!state.selectionMode) viewModel.enterSelection(id) else viewModel.toggleSelection(id)
+                            },
+                            swipeEnabled = !state.selectionMode,
+                            isRevealed = revealedItemId == id,
+                            onRevealedChange = { open -> revealedItemId = if (open) id else if (revealedItemId == id) null else revealedItemId },
                             modifier = Modifier.padding(horizontal = 20.dp, vertical = 5.dp)
                         )
                     }
@@ -293,17 +370,55 @@ fun WishlistScreen(
                         )
                     }
                     items(rest, key = { "lib-${it.item.id}" }) { item ->
-                        WishCard(
+                        val id = item.item.id
+                        val selected = id in state.selectedIds
+                        SwipeableWishCard(
                             item = item,
-                            onClick = { onOpenItem(item.item.id) },
+                            onClick = {
+                                when {
+                                    revealedItemId != null && revealedItemId != id -> revealedItemId = null
+                                    state.selectionMode -> viewModel.toggleSelection(id)
+                                    else -> onOpenItem(id)
+                                }
+                            },
+                            onEdit = { onEditItem(id) },
+                            onRemove = { pendingDeleteId = id },
+                            selected = selected,
+                            selectionMode = state.selectionMode,
+                            onLongClick = {
+                                revealedItemId = null
+                                if (!state.selectionMode) viewModel.enterSelection(id) else viewModel.toggleSelection(id)
+                            },
+                            swipeEnabled = !state.selectionMode,
+                            isRevealed = revealedItemId == id,
+                            onRevealedChange = { open -> revealedItemId = if (open) id else if (revealedItemId == id) null else revealedItemId },
                             modifier = Modifier.padding(horizontal = 20.dp, vertical = 5.dp)
                         )
                     }
                 } else {
                     items(state.items, key = { it.item.id }) { item ->
-                        WishCard(
+                        val id = item.item.id
+                        val selected = id in state.selectedIds
+                        SwipeableWishCard(
                             item = item,
-                            onClick = { onOpenItem(item.item.id) },
+                            onClick = {
+                                when {
+                                    revealedItemId != null && revealedItemId != id -> revealedItemId = null
+                                    state.selectionMode -> viewModel.toggleSelection(id)
+                                    else -> onOpenItem(id)
+                                }
+                            },
+                            onEdit = { onEditItem(id) },
+                            onRemove = { pendingDeleteId = id },
+                            selected = selected,
+                            selectionMode = state.selectionMode,
+                            onLongClick = {
+                                revealedItemId = null
+                                if (!state.selectionMode) viewModel.enterSelection(id) else viewModel.toggleSelection(id)
+                            },
+                            swipeEnabled = !state.selectionMode,
+                            isRevealed = revealedItemId == id,
+                            onRevealedChange = { open -> revealedItemId = if (open) id else if (revealedItemId == id) null else revealedItemId },
                             modifier = Modifier.padding(horizontal = 20.dp, vertical = 5.dp)
                         )
                     }
@@ -317,42 +432,169 @@ fun WishlistScreen(
             containerColor = MaterialTheme.colorScheme.surface,
             contentColor = MaterialTheme.colorScheme.primary
         )
+
+        androidx.compose.animation.AnimatedVisibility(
+            visible = state.selectionMode,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.slideInVertically { it / 2 },
+            exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.slideOutVertically { it / 2 }
+        ) {
+            SelectionBar(
+                count = state.selectedIds.size,
+                onCancel = viewModel::clearSelection,
+                onSelectAll = { viewModel.selectAll(state.items.map { it.item.id }) },
+                onMove = { showMoveDialog = true },
+                onRemove = { showBulkDeleteConfirm = true },
+                floating = true
+            )
+        }
+
+        pendingDeleteId?.let { id ->
+            ConfirmDialog(
+                title = "Remove item?",
+                body = "This saved item will be removed from your wishlist.",
+                confirmLabel = "Remove",
+                onConfirm = {
+                    viewModel.deleteItem(id)
+                    pendingDeleteId = null
+                },
+                onDismiss = { pendingDeleteId = null }
+            )
+        }
+        if (showBulkDeleteConfirm && state.selectionMode) {
+            ConfirmDialog(
+                title = "Remove ${state.selectedIds.size} items?",
+                body = "The selected items will be removed from your wishlist.",
+                confirmLabel = "Remove",
+                onConfirm = {
+                    viewModel.deleteSelected()
+                    showBulkDeleteConfirm = false
+                },
+                onDismiss = { showBulkDeleteConfirm = false }
+            )
+        }
+        if (showMoveDialog && state.selectionMode) {
+            AlertDialog(
+                onDismissRequest = { showMoveDialog = false },
+                title = { Text("Move to collection") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        TextButton(onClick = {
+                            viewModel.moveSelectedToCategory(null)
+                            showMoveDialog = false
+                        }, modifier = Modifier.fillMaxWidth()) {
+                            Text("Unsorted", modifier = Modifier.fillMaxWidth())
+                        }
+                        state.categories.forEach { cat ->
+                            TextButton(onClick = {
+                                viewModel.moveSelectedToCategory(cat.category.id)
+                                showMoveDialog = false
+                            }, modifier = Modifier.fillMaxWidth()) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(categoryIcon(cat.category.name), contentDescription = null, modifier = Modifier.size(16.dp), tint = extra.muted)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(cat.category.name)
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = { TextButton(onClick = { showMoveDialog = false }) { Text("Cancel") } }
+            )
+        }
     }
 }
 
 @Composable
-private fun WishlistHeader(
-    state: WishlistUiState,
-    onRefresh: () -> Unit
+private fun SelectionBar(
+    count: Int,
+    onCancel: () -> Unit,
+    onSelectAll: () -> Unit,
+    onMove: () -> Unit,
+    onRemove: () -> Unit,
+    floating: Boolean = false
 ) {
+    val colors = MaterialTheme.colorScheme
+    val extra = LocalWishExtraColors.current
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = if (floating) colors.surface else extra.sunken.copy(alpha = 0.55f),
+        tonalElevation = if (floating) 6.dp else 0.dp,
+        shadowElevation = if (floating) 10.dp else 0.dp,
+        border = androidx.compose.foundation.BorderStroke(1.dp, if (floating) extra.hairline.copy(alpha = 0.9f) else extra.hairline)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onCancel, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Rounded.Close, contentDescription = "Cancel selection", tint = extra.muted, modifier = Modifier.size(18.dp))
+                }
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    text = "$count selected",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = colors.onSurface,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(onClick = onSelectAll) { Text("Select all", color = colors.primary) }
+            }
+            Spacer(Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Surface(
+                    onClick = onMove,
+                    shape = RoundedCornerShape(12.dp),
+                    color = colors.primary.copy(alpha = 0.12f),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Rounded.DriveFileMove, contentDescription = null, tint = colors.primary, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Move", style = MaterialTheme.typography.labelLarge, color = colors.primary)
+                    }
+                }
+                Surface(
+                    onClick = onRemove,
+                    shape = RoundedCornerShape(12.dp),
+                    color = extra.terracotta.copy(alpha = 0.14f),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Rounded.DeleteOutline, contentDescription = null, tint = extra.terracotta, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Remove", style = MaterialTheme.typography.labelLarge, color = extra.terracotta)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WishlistHeader(state: WishlistUiState) {
     val extra = LocalWishExtraColors.current
     val colors = MaterialTheme.colorScheme
     val summary = state.summary
 
     Column(modifier = Modifier.padding(horizontal = 20.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = "WISHWELL",
-                style = MaterialTheme.typography.titleLarge.copy(
-                    letterSpacing = 4.sp,
-                    fontWeight = FontWeight.Bold
-                ),
-                color = colors.onBackground,
-                modifier = Modifier.weight(1f)
-            )
-            if (state.refreshing) {
-                LoadingSpinner(size = 18.dp, modifier = Modifier.padding(9.dp))
-            } else {
-                IconButton(onClick = onRefresh) {
-                    Icon(
-                        imageVector = Icons.Rounded.Refresh,
-                        contentDescription = "Refresh prices",
-                        tint = extra.muted,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
-        }
+        Text(
+            text = "WISHWELL",
+            style = MaterialTheme.typography.titleLarge.copy(
+                letterSpacing = 4.sp,
+                fontWeight = FontWeight.Bold
+            ),
+            color = colors.onBackground
+        )
 
         Spacer(Modifier.height(12.dp))
         Text(
@@ -407,7 +649,7 @@ private fun WishlistHeader(
             if (summary.mixedCurrencies) {
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "Totals use ${summary.currencyCode}. Other currencies aren't summed.",
+                    text = "Totals use ${currencyDisplayName(summary.currencyCode)}. Other currencies aren't summed.",
                     style = MaterialTheme.typography.labelSmall,
                     color = extra.muted
                 )
@@ -526,7 +768,11 @@ private fun needsAttention(item: ItemWithStats): Boolean {
 private fun LazyListScope.gridRows(
     items: List<ItemWithStats>,
     keyPrefix: String,
-    onOpenItem: (Long) -> Unit
+    selectedIds: Set<Long>,
+    selectionMode: Boolean,
+    onOpenItem: (Long) -> Unit,
+    onToggleSelection: (Long) -> Unit,
+    onEnterSelection: (Long) -> Unit
 ) {
     val rows = items.chunked(2)
     items(rows, key = { row -> "$keyPrefix-${row.joinToString("-") { it.item.id.toString() }}" }) { row ->
@@ -537,9 +783,14 @@ private fun LazyListScope.gridRows(
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             row.forEach { item ->
+                val id = item.item.id
+                val selected = id in selectedIds
                 WishlistGridCard(
                     item = item,
-                    onClick = { onOpenItem(item.item.id) },
+                    onClick = { if (selectionMode) onToggleSelection(id) else onOpenItem(id) },
+                    selected = selected,
+                    selectionMode = selectionMode,
+                    onLongClick = { if (!selectionMode) onEnterSelection(id) else onToggleSelection(id) },
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -580,24 +831,33 @@ private fun AttentionFilters(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun WishlistGridCard(
     item: ItemWithStats,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    selected: Boolean = false,
+    selectionMode: Boolean = false,
+    onLongClick: (() -> Unit)? = null
 ) {
     val colors = MaterialTheme.colorScheme
     val extra = LocalWishExtraColors.current
     val price = item.price
     val listPrice = item.item.listPrice
+    val borderColor = if (selected) colors.primary else extra.hairline
 
     Surface(
         modifier = modifier
             .clip(RoundedCornerShape(18.dp))
-            .clickable(onClick = onClick),
+            .then(
+                if (onLongClick != null || selectionMode) {
+                    Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
+                } else Modifier.clickable(onClick = onClick)
+            ),
         shape = RoundedCornerShape(18.dp),
-        color = colors.surface,
-        border = BorderStroke(1.dp, extra.hairline)
+        color = if (selected) colors.primary.copy(alpha = 0.08f) else colors.surface,
+        border = BorderStroke(if (selected) 1.5.dp else 1.dp, borderColor)
     ) {
         Column(modifier = Modifier.padding(10.dp)) {
             Box {
@@ -618,7 +878,28 @@ private fun WishlistGridCard(
                 }
                 if (badge != null) {
                     Box(modifier = Modifier.align(Alignment.TopEnd).padding(6.dp)) {
-                        DealBadge(badge.first, badge.second)
+                        com.wishwell.app.ui.components.DealBadge(badge.first, badge.second)
+                    }
+                }
+                if (selectionMode) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(6.dp)
+                            .size(22.dp)
+                            .clip(CircleShape)
+                            .background(if (selected) colors.primary else colors.surface.copy(alpha = 0.92f))
+                            .border(1.dp, if (selected) colors.primary else extra.hairline, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (selected) {
+                            Icon(
+                                Icons.Rounded.CheckCircle,
+                                contentDescription = "Selected",
+                                tint = colors.onPrimary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
                 }
             }

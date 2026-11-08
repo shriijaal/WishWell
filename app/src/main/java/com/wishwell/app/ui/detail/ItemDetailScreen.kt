@@ -36,6 +36,7 @@ import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.TrendingDown
 import androidx.compose.material.icons.rounded.TrendingUp
 import androidx.compose.material.icons.rounded.ViewCarousel
@@ -119,7 +120,8 @@ fun ItemDetailRoute(
     itemId: Long,
     onBack: () -> Unit,
     onOpenItem: (Long) -> Unit,
-    onTrackProduct: (String) -> Unit = {}
+    onTrackProduct: (String) -> Unit = {},
+    onEdit: () -> Unit = {}
 ) {
     val viewModel: ItemDetailViewModel = viewModel(
         key = "detail-$itemId",
@@ -173,7 +175,9 @@ fun ItemDetailRoute(
         onBack = onBack,
         onOpenItem = onOpenItem,
         onTrackProduct = onTrackProduct,
+        onEdit = onEdit,
         onFindProducts = viewModel::findStoreProducts,
+        onSearchAllStores = viewModel::searchAllStores,
         onRefresh = viewModel::refresh,
         onSetTarget = viewModel::setTargetPrice,
         onSetCategory = viewModel::setCategory,
@@ -199,7 +203,9 @@ private fun ItemDetailContent(
     onBack: () -> Unit,
     onOpenItem: (Long) -> Unit,
     onTrackProduct: (String) -> Unit,
+    onEdit: () -> Unit,
     onFindProducts: (StoreSearchLink) -> Unit,
+    onSearchAllStores: () -> Unit,
     onRefresh: () -> Unit,
     onSetTarget: (Double?) -> Unit,
     onSetCategory: (Long?) -> Unit,
@@ -265,6 +271,14 @@ private fun ItemDetailContent(
                     modifier = Modifier.weight(1f),
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
                 )
+                IconButton(onClick = onEdit) {
+                    Icon(
+                        Icons.Rounded.Edit,
+                        contentDescription = "Edit item",
+                        tint = extra.muted,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
                 IconButton(onClick = { showDeleteDialog = true }) {
                     Icon(
                         Icons.Rounded.DeleteOutline,
@@ -410,23 +424,118 @@ private fun ItemDetailContent(
                     )
                 }
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                val listPrice = item.listPrice
-                val currentPrice = detail.price
-                if (listPrice != null && currentPrice != null && listPrice > currentPrice + 0.01) {
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val listPrice = item.listPrice
+                    val currentPrice = detail.price
+                    if (listPrice != null && currentPrice != null && listPrice > currentPrice + 0.01) {
+                        Text(
+                            text = formatMoney(listPrice, currency),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = extra.muted,
+                            textDecoration = TextDecoration.LineThrough
+                        )
+                        Spacer(Modifier.width(10.dp))
+                    }
                     Text(
-                        text = formatMoney(listPrice, currency),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = extra.muted,
-                        textDecoration = TextDecoration.LineThrough
+                        text = "Lowest ${formatMoney(detail.lowest, currency)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = extra.muted
                     )
-                    Spacer(Modifier.width(10.dp))
                 }
-                Text(
-                    text = "Lowest ${formatMoney(detail.lowest, currency)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = extra.muted
+                if (item.inStock != null) {
+                    Spacer(Modifier.width(10.dp))
+                    val inStock = item.inStock == true
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = if (inStock) {
+                            colors.primary.copy(alpha = 0.12f)
+                        } else {
+                            extra.terracotta.copy(alpha = 0.16f)
+                        }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(if (inStock) colors.primary else extra.terracotta)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = if (inStock) "In stock" else "Out of stock",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (inStock) colors.primary else extra.terracotta
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val targetPrice = item.targetPrice
+                val currentPrice = detail.price
+                InfoTile(
+                    label = "Target price",
+                    value = targetPrice?.let { formatMoney(it, currency) } ?: "Not set",
+                    hint = when {
+                        targetPrice == null -> "Tap to add a target"
+                        currentPrice != null && currentPrice <= targetPrice -> "Reached — at or below target"
+                        currentPrice != null -> {
+                            val gap = ((currentPrice - targetPrice) / targetPrice * 100).toInt()
+                            "$gap% above your target"
+                        }
+
+                        else -> "Tap to edit"
+                    },
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        targetInput = editablePrice(targetPrice)
+                        showTargetDialog = true
+                    }
                 )
+                Box(modifier = Modifier.weight(1f)) {
+                    val collectionValue = detail.categoryName ?: "Unsorted"
+                    InfoTile(
+                        label = "Collection",
+                        value = collectionValue,
+                        hint = "Tap to move",
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = { categoryMenuOpen = true }
+                    )
+                    DropdownMenu(
+                        expanded = categoryMenuOpen,
+                        onDismissRequest = { categoryMenuOpen = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Unsorted") },
+                            onClick = {
+                                onSetCategory(null)
+                                categoryMenuOpen = false
+                            }
+                        )
+                        categories.forEach { category ->
+                            DropdownMenuItem(
+                                text = { Text(category.category.name) },
+                                onClick = {
+                                    onSetCategory(category.category.id)
+                                    categoryMenuOpen = false
+                                }
+                            )
+                        }
+                    }
+                }
             }
 
             Spacer(Modifier.height(20.dp))
@@ -526,62 +635,6 @@ private fun ItemDetailContent(
             }
 
             Spacer(Modifier.height(18.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                val targetPrice = item.targetPrice
-                val currentPrice = detail.price
-                InfoTile(
-                    label = "Target price",
-                    value = targetPrice?.let { formatMoney(it, currency) } ?: "Not set",
-                    hint = when {
-                        targetPrice == null -> "Tap to add a target"
-                        currentPrice != null && currentPrice <= targetPrice -> "Reached — at or below target"
-                        currentPrice != null -> {
-                            val gap = ((currentPrice - targetPrice) / targetPrice * 100).toInt()
-                            "$gap% above your target"
-                        }
-
-                        else -> "Tap to edit"
-                    },
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        targetInput = editablePrice(targetPrice)
-                        showTargetDialog = true
-                    }
-                )
-                Box(modifier = Modifier.weight(1f)) {
-                    val collectionValue = detail.categoryName ?: "Unsorted"
-                    val collectionHint = "Tap to move"
-                    InfoTile(
-                        label = "Collection",
-                        value = collectionValue,
-                        hint = collectionHint,
-                        onClick = { categoryMenuOpen = true }
-                    )
-                    DropdownMenu(
-                        expanded = categoryMenuOpen,
-                        onDismissRequest = { categoryMenuOpen = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Unsorted") },
-                            onClick = {
-                                onSetCategory(null)
-                                categoryMenuOpen = false
-                            }
-                        )
-                        categories.forEach { category ->
-                            DropdownMenuItem(
-                                text = { Text(category.category.name) },
-                                onClick = {
-                                    onSetCategory(category.category.id)
-                                    categoryMenuOpen = false
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(8.dp))
             InfoTile(
                 label = "Notes",
                 value = item.notes.ifBlank { "No note yet" },
@@ -702,6 +755,30 @@ private fun ItemDetailContent(
                                 modifier = Modifier.padding(6.dp).size(18.dp)
                             )
                         }
+                    }
+                }
+
+                if (comparisons.isNotEmpty()) {
+                    Spacer(Modifier.height(10.dp))
+                    val searchingStores = compareStates.values.any { it is CompareSearchState.Loading }
+                    OutlinedButton(
+                        onClick = onSearchAllStores,
+                        enabled = !searchingStores,
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, if (searchingStores) extra.hairline else colors.primary.copy(alpha = 0.35f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            Icons.Rounded.Search,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = if (searchingStores) extra.muted else colors.primary
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = if (searchingStores) "Searching stores…" else "Search stores for this item",
+                            color = if (searchingStores) extra.muted else colors.primary
+                        )
                     }
                 }
 
@@ -851,8 +928,8 @@ private fun ItemDetailContent(
 
                     comparisons.forEach { link ->
                         val state = compareStates[link.storeName] ?: CompareSearchState.Idle
-                        // Clear/hide stores that don't return anything (avoid clutter).
-                        if (state is CompareSearchState.Empty || state is CompareSearchState.Error) {
+                        // Hidden by default; show only when searching/results are available.
+                        if (state is CompareSearchState.Idle || state is CompareSearchState.Empty || state is CompareSearchState.Error) {
                             return@forEach
                         }
                         Surface(
@@ -1144,7 +1221,7 @@ private fun ItemDetailContent(
                 OutlinedTextField(
                     value = targetInput,
                     onValueChange = { targetInput = it },
-                    label = { Text("Target price ($currency)") },
+                    label = { Text("Target price (${currencySymbol(currency)})") },
                     singleLine = true,
                     isError = targetInput.isNotBlank() && parsePrice(targetInput) == null,
                     shape = RoundedCornerShape(12.dp),

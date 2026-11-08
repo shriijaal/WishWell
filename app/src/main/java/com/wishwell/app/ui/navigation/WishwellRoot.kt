@@ -84,6 +84,7 @@ import com.wishwell.app.di.AppContainer
 import com.wishwell.app.ui.add.AddItemScreen
 import com.wishwell.app.ui.collections.CollectionsScreen
 import com.wishwell.app.ui.detail.ItemDetailRoute
+import com.wishwell.app.ui.edit.EditItemScreen
 import com.wishwell.app.ui.settings.SettingsScreen
 import com.wishwell.app.ui.theme.LocalWishExtraColors
 import com.wishwell.app.ui.tracking.PriceTrackingScreen
@@ -119,9 +120,11 @@ fun WishwellRoot(
     val navbarGlassGlow by container.prefs.navbarGlassGlow.collectAsStateWithLifecycle(initialValue = true)
     var navCompact by remember { mutableStateOf(false) }
     var navScrollAccumulator by remember { mutableFloatStateOf(0f) }
+    var wishlistSelectionMode by remember { mutableStateOf(false) }
     LaunchedEffect(currentRoute) {
         navCompact = false
         navScrollAccumulator = 0f
+        if (currentRoute != "wishlist") wishlistSelectionMode = false
     }
     val effectiveCompact = when (navbarStyle) {
         "glass_compact" -> true
@@ -179,7 +182,7 @@ fun WishwellRoot(
             }
         },
         floatingActionButton = {
-            if (currentRoute == "wishlist") {
+            if (currentRoute == "wishlist" && !wishlistSelectionMode) {
                 ExtendedFloatingActionButton(
                     onClick = { navController.navigate("add") },
                     containerColor = colors.primary,
@@ -209,7 +212,8 @@ fun WishwellRoot(
                     container = container,
                     onOpenItem = { navController.navigate("item/$it") },
                     onAddItem = { navController.navigate("add") },
-                    onOpenSettings = { navigateTopLevel("settings") }
+                    onEditItem = { navController.navigate("edit/$it") { launchSingleTop = true } },
+                    onSelectionModeChanged = { wishlistSelectionMode = it }
                 )
             }
 
@@ -218,7 +222,7 @@ fun WishwellRoot(
                     container = container,
                     onOpenItem = { navController.navigate("item/$it") },
                     onAddItem = { navController.navigate("add") },
-                    onOpenSettings = { navigateTopLevel("settings") }
+                    onEditItem = { navController.navigate("edit/$it") { launchSingleTop = true } }
                 )
             }
 
@@ -260,7 +264,21 @@ fun WishwellRoot(
                     itemId = itemId,
                     onBack = { navController.popBackStack() },
                     onOpenItem = { navController.navigate("item/$it") { launchSingleTop = true } },
-                    onTrackProduct = { url -> navController.navigate("add?url=${Uri.encode(url)}") }
+                    onTrackProduct = { url -> navController.navigate("add?url=${Uri.encode(url)}") },
+                    onEdit = { navController.navigate("edit/$itemId") { launchSingleTop = true } }
+                )
+            }
+
+            composable(
+                route = "edit/{itemId}",
+                arguments = listOf(navArgument("itemId") { type = NavType.LongType })
+            ) { entry ->
+                val itemId = entry.arguments?.getLong("itemId") ?: 0L
+                EditItemScreen(
+                    container = container,
+                    itemId = itemId,
+                    onBack = { navController.popBackStack() },
+                    onSaved = { navController.popBackStack() }
                 )
             }
         }
@@ -323,10 +341,9 @@ private fun WishBottomBar(
                     Box(
                         modifier = Modifier
                             .matchParentSize()
-                            .padding(horizontal = 10.dp, vertical = 2.dp)
-                            .blur(16.dp)
                             .clip(RoundedCornerShape(999.dp))
                             .background(colors.primary.copy(alpha = 0.22f))
+                            .blur(16.dp)
                     )
                 }
                 Surface(

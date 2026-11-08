@@ -183,4 +183,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     fun clearMessage() {
         message.value = null
     }
+
+    fun reportMessage(text: String) {
+        message.value = text
+    }
 }

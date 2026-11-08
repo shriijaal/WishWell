@@ -9,6 +9,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
+import org.jsoup.nodes.Element
 import java.util.concurrent.TimeUnit
 
 /**
@@ -105,6 +106,7 @@ class ProductScraper(
             ?: inferCurrency(document, host)
 
         val urlHints = extractPriceHintsFromUrl(rawUrl)
+        val (domCurrent, domOriginal) = extractDomProductPrices(document)
         val currencyResolved = currency ?: scriptData?.currencyCode ?: stores.defaultCurrencyFor(host)
 
         var price = offerPrice
@@ -112,11 +114,13 @@ class ProductScraper(
             ?: MoneyParser.parse(document.selectFirst("[itemprop=price]")?.attr("content"))
             ?: darazPriceText(document)?.let(MoneyParser::parse)
             ?: scriptData?.price
+            ?: domCurrent
 
         var listPrice = originalPrice
             ?: aggregateHigh
             ?: scriptData?.listPrice
             ?: urlHints.second
+            ?: domOriginal
 
         val urlPrice = urlHints.first
         if (urlPrice != null) {
@@ -131,7 +135,47 @@ class ProductScraper(
             }
         }
 
+        // DOM sale/original pair (e.g., WooCommerce <del>/<ins>, Ergokeys) is a strong product-scoped signal.
+        val domHasSale = domCurrent != null && domOriginal != null && domOriginal > domCurrent + 0.01
+        if (domHasSale) {
+            val sale = domCurrent!!
+            val orig = domOriginal!!
+            fun normalizeUnits(value: Double?, ref: Double): Double? {
+                val v = value ?: return null
+                if (v > ref * 50.0 && kotlin.math.abs(v / 100.0 - ref) / kotlin.math.max(ref, 0.01) < 0.2) return v / 100.0
+                if (v > ref * 50.0 && v % 1.0 == 0.0) return v / 100.0
+                return v
+            }
+            price = normalizeUnits(price, sale) ?: price
+            listPrice = normalizeUnits(listPrice, orig)
+            when {
+                price == null -> price = sale
+                price!! >= orig - 0.01 && sale < orig - 0.01 -> {
+                    // We likely captured the original/base price as current; correct to sale and keep original.
+                    price = sale
+                }
+                sale < price!! - 0.01 -> {
+                    // DOM indicates a lower sale/current price on the product.
+                    if (listPrice == null || listPrice!! < price!! - 0.01) listPrice = price
+                    price = sale
+                }
+            }
+            val p = price
+            // Prefer the confident DOM original for the displayed "was/list" price; drop wildly mismatched values.
+            if (p != null && orig > p + 0.01) {
+                val lp = listPrice
+                if (lp == null || lp <= p + 0.01 || lp > orig * 5.0 || kotlin.math.abs(lp - orig) / kotlin.math.max(orig, 0.01) > 1.5) {
+                    listPrice = orig
+                } else if (lp < orig - 0.01) {
+                    listPrice = orig
+                }
+            }
+        }
+
         if (listPrice != null && price != null && listPrice <= price + 0.01) listPrice = null
+        fun roundMoney(v: Double?): Double? = v?.let { kotlin.math.round(it * 100.0) / 100.0 }?.takeIf { it > 0.0 }
+        price = roundMoney(price)
+        listPrice = roundMoney(listPrice)
 
         val brand = when (val b = jsonLd?.opt("brand")) {
             is String -> b
@@ -144,7 +188,8 @@ class ProductScraper(
         val resolvedImage = resolvedImageUrls.firstOrNull() ?: scriptData?.imageUrl
         val resolvedBrand = brand ?: scriptData?.brand
         val description = extractDescription(jsonLd, document)
-        val specs = extractSpecs(jsonLd, document)
+        val specs = extractSpecs(jsonLd, document, description)
+        val inStock = extractStockStatus(jsonLd, document)
 
         return ProductMetadata(
             title = resolvedTitle?.let { cleanTitle(it, storeName) },
@@ -158,7 +203,8 @@ class ProductScraper(
             finalUrl = finalUrl,
             priceHistory = extractPriceHistory(document, currencyResolved, rawUrl),
             description = description,
-            specs = specs
+            specs = specs,
+            inStock = inStock
         )
     }
 
@@ -166,10 +212,120 @@ class ProductScraper(
         val candidates = listOf(
             "product:original_price:amount",
             "og:price:original_amount",
+            "og:price:standard_amount",
+            "product:regular_price:amount",
             "product:list_price:amount",
-            "product:price:standard_amount"
+            "product:price:standard_amount",
+            "product:price:regular_amount"
         )
         return candidates.firstNotNullOfOrNull { key -> MoneyParser.parse(document.metaContent(key)) }
+    }
+
+    private fun isInExcludedPriceContext(el: Element): Boolean {
+        var cur: Element? = el
+        var depth = 0
+        while (cur != null && depth < 12) {
+            val tag = cur.tagName().lowercase()
+            if (tag in setOf("header", "footer", "nav", "aside")) return true
+            val id = cur.id().lowercase()
+            val cls = cur.className().lowercase()
+            val hay = "$id $cls"
+            val excludedTokens = listOf(
+                "related", "recommend", "upsell", "cross-sell", "cross_sell", "crosssell",
+                "you-may", "also-like", "also_like", "similar-product", "similar_product",
+                "recently-viewed", "recently_viewed", "product-recommend", "complementary",
+                "bought-together", "frequently-bought", "customers-also", "more-from", "more_from",
+                "widget", "sidebar", "cart", "mini-cart", "minicart", "header-cart"
+            )
+            if (excludedTokens.any { hay.contains(it) }) return true
+            if (cls.contains("related") && cls.contains("products")) return true
+            if (cls.contains("upsells") || cls.contains("cross-sells")) return true
+            cur = cur.parent()
+            depth++
+        }
+        return false
+    }
+
+    /**
+     * Returns (currentOrSalePrice, originalOrListPrice) from DOM product price blocks.
+     * Handles WooCommerce `<del>/<ins>`, screen-reader text, and common sale/original selectors.
+     */
+    private fun extractDomProductPrices(document: Document): Pair<Double?, Double?> {
+        fun parseAmount(el: Element?): Double? = MoneyParser.parse(el?.text())
+            ?: MoneyParser.parse(el?.attr("content"))
+            ?: MoneyParser.parse(el?.attr("data-price"))
+
+        val containerSelectors = listOf(
+            ".summary.entry-summary .price",
+            ".entry-summary .price",
+            ".product-summary .price",
+            "[class*=product-summary] .price",
+            ".single-product .summary .price",
+            "main .product .price",
+            "main .entry-summary p.price",
+            "p.price",
+            ".product .woocommerce-Price-amount",
+            ".pdp-product-price",
+            ".pdp-price",
+            "[class*=pdp-price]",
+            ".product-price",
+            "[class*=ProductPrice]",
+            "[itemprop=offers] [itemprop=price]"
+        )
+
+        for (sel in containerSelectors) {
+            for (container in document.select(sel).take(8)) {
+                if (isInExcludedPriceContext(container)) continue
+
+                // WooCommerce / common: <del> original, <ins> sale
+                val del = container.selectFirst("del .amount, del .woocommerce-Price-amount, del [class*=amount], del bdi, del")
+                val ins = container.selectFirst("ins .amount, ins .woocommerce-Price-amount, ins [class*=amount], ins bdi, ins")
+                val delPrice = parseAmount(del)
+                val insPrice = parseAmount(ins)
+                if (delPrice != null && insPrice != null && delPrice > insPrice + 0.01) {
+                    return insPrice to delPrice
+                }
+
+                // Screen-reader accessibility text (WooCommerce)
+                var srOriginal: Double? = null
+                var srCurrent: Double? = null
+                for (sr in container.select(".screen-reader-text, .sr-only, [class*=screen-reader]")) {
+                    val t = sr.text().lowercase()
+                    val amount = parseAmount(sr.nextElementSibling()) ?: run {
+                        val parent = sr.parent() ?: return@run null
+                        parseAmount(parent.selectFirst(".amount, .woocommerce-Price-amount, bdi"))
+                    } ?: MoneyParser.parse(t)
+                    when {
+                        t.contains("original price") || t.contains("regular price") -> if (amount != null) srOriginal = amount
+                        t.contains("current price") || t.contains("sale price") || t.contains("discounted price") -> if (amount != null) srCurrent = amount
+                    }
+                }
+                if (srOriginal != null && srCurrent != null && srOriginal > srCurrent + 0.01) {
+                    return srCurrent to srOriginal
+                }
+                if (srCurrent != null && srOriginal == null && insPrice == null && delPrice != null && delPrice > srCurrent + 0.01) {
+                    return srCurrent to delPrice
+                }
+
+                // Explicit sale/original classes within container
+                val saleEl = container.selectFirst(".sale-price .amount, .price--sale .amount, [class*=sale-price] .amount, [class*=current-price] .amount, [class*=special-price] .amount, .special-price .price, ins .price")
+                val origEl = container.selectFirst(".regular-price .amount, .price--regular .amount, [class*=regular-price] .amount, [class*=original-price] .amount, [class*=compare-price] .amount, [class*=old-price] .amount, [class*=list-price] .amount, [class*=was-price] .amount, del .price")
+                val saleP = parseAmount(saleEl) ?: insPrice
+                val origP = parseAmount(origEl) ?: delPrice
+                if (saleP != null && origP != null && origP > saleP + 0.01) {
+                    return saleP to origP
+                }
+                if (saleP != null && origP == null) {
+                    // current-only in a sale-marked element; keep looking for original in same container
+                    val extraOrig = container.select(".amount, .woocommerce-Price-amount, bdi").mapNotNull { parseAmount(it) }
+                        .filter { it > saleP + 0.01 }.maxOrNull()
+                    if (extraOrig != null) return saleP to extraOrig
+                }
+
+                // Two amount elements where first is struck-through context? (handled by del above). Otherwise ambiguous.
+            }
+        }
+        return null to null
     }
 
     private fun Document.metaContent(key: String): String? =
@@ -181,65 +337,150 @@ class ProductScraper(
 
     private fun extractImageUrls(jsonLd: JSONObject?, document: Document, scriptImages: List<String> = emptyList()): List<String> {
         val urls = linkedSetOf<String>()
-        fun add(raw: String?) {
+
+        fun addUrl(raw: String?, el: Element? = null, allowMetaLogoRisk: Boolean = false) {
             val u = normalizeImageUrl(raw) ?: return
-            if (u.length > 2000) return
-            // skip tiny/placeholder/data
-            if (u.startsWith("data:")) return
-            val lower = u.lowercase()
-            if (lower.contains("1x1") || lower.contains("pixel") || lower.contains("placeholder") || lower.contains("sprite") || lower.contains("icon")) return
+            if (u.length > 2000 || u.startsWith("data:")) return
+            if (isJunkOrLogoImage(u, el, allowMetaLogoRisk)) return
             urls += u
         }
 
-        jsonLd?.opt("image")?.let { image ->
-            when (image) {
-                is String -> add(image)
-                is JSONArray -> for (i in 0 until image.length()) {
-                    when (val v = image.opt(i)) {
-                        is String -> add(v)
-                        is JSONObject -> add(v.optString("url").ifBlank { v.optString("contentUrl").ifBlank { v.optString("@id") } })
-                    }
-                }
-                is JSONObject -> add(image.optString("url").ifBlank { image.optString("contentUrl") })
-            }
-        }
-        // meta / itemprop (collect multiple where possible)
-        document.select("meta[property=og:image], meta[property=og:image:secure_url], meta[name=og:image], meta[name=twitter:image], meta[property=product:image]")
-            .forEach { add(it.attr("content").ifBlank { it.attr("value") }) }
-        document.select("[itemprop=image]").forEach { el ->
-            add(el.attr("content").ifBlank { el.attr("src").ifBlank { el.attr("href") } })
-        }
-        document.select("link[rel=image_src]").forEach { add(it.attr("href")) }
-        scriptImages.forEach(::add)
-
-        // Generic gallery selectors (best-effort) - always try to capture full carousel
-        if (urls.size < 12) {
-            val gallerySelectors = listOf(
-                ".pdp-mod-common-image img", ".gallery-preview-panel img", ".next-slick-slide img",
-                "[class*=gallery-preview] img", "[class*=item-gallery] img", "[class*=image-gallery] img",
-                "[class*=gallery] img", "[class*=carousel] img", "[class*=slider] img",
-                "[class*=product-image] img", "[class*=thumbnail] img",
-                "img[data-zoom-image]", "img[data-large-image]", "img[data-big]", "img[data-src]"
-            )
-            for (sel in gallerySelectors) {
-                document.select(sel).take(24).forEach { img ->
-                    add(
-                        img.attr("data-zoom-image").ifBlank {
-                            img.attr("data-large-image").ifBlank {
-                                img.attr("data-big").ifBlank { img.attr("data-src").ifBlank { img.attr("src").ifBlank { img.attr("data-lazy-src") } } }
+        fun addFromEl(img: Element) {
+            val candidate = img.attr("data-zoom-image").ifBlank {
+                img.attr("data-large-image").ifBlank {
+                    img.attr("data-big").ifBlank {
+                        img.attr("data-src").ifBlank {
+                            img.attr("data-lazy-src").ifBlank {
+                                img.attr("data-original").ifBlank { img.attr("src") }
                             }
                         }
-                    )
+                    }
                 }
-                if (urls.size >= 12) break
+            }
+            addUrl(candidate, img)
+        }
+
+        // 1) JSON-LD Product image (highest confidence)
+        jsonLd?.opt("image")?.let { image ->
+            when (image) {
+                is String -> addUrl(image)
+                is JSONArray -> for (i in 0 until image.length()) {
+                    when (val v = image.opt(i)) {
+                        is String -> addUrl(v)
+                        is JSONObject -> addUrl(v.optString("url").ifBlank { v.optString("contentUrl").ifBlank { v.optString("@id") } })
+                    }
+                }
+                is JSONObject -> addUrl(image.optString("url").ifBlank { image.optString("contentUrl") })
             }
         }
+
+        // 2) Product-scoped gallery images (avoid related/recommended/header/footer/logo blocks)
+        val productGallerySelectors = listOf(
+            // Daraz / Lazada PDP
+            ".pdp-mod-common-image img", ".gallery-preview-panel img", ".next-slick-slide img",
+            ".pdp-block__main-image img", "[class*=pdp-mod-common-image] img",
+            // WooCommerce / common storefront galleries
+            ".woocommerce-product-gallery__image img", ".woocommerce-product-gallery__wrapper img",
+            "figure.woocommerce-product-gallery__wrapper img", ".woocommerce-product-gallery img",
+            ".product-gallery img", "[class*=product-gallery__image] img", "[data-product-gallery] img",
+            ".product__media img", ".product-single__media img", ".product__photo img",
+            ".Product__SlideItem img", "[class*=ProductGallery] img", "[class*=productGallery] img",
+            // Generic product image/gallery containers (still filtered by exclusion context)
+            "[class*=gallery-preview] img", "[class*=item-gallery] img", "[class*=image-gallery] img"
+        )
+        for (sel in productGallerySelectors) {
+            document.select(sel).take(30).forEach { img ->
+                if (isInExcludedImageContext(img)) return@forEach
+                addFromEl(img)
+            }
+            if (urls.size >= 12) break
+        }
+
+        // 3) Meta / itemprop fallbacks (filtered for logos/junk)
+        if (urls.size < 8) {
+            document.select("meta[property=og:image], meta[property=og:image:secure_url], meta[name=og:image], meta[name=twitter:image], meta[property=product:image]")
+                .forEach { addUrl(it.attr("content").ifBlank { it.attr("value") }) }
+            document.select("[itemprop=image]").forEach { el ->
+                if (!isInExcludedImageContext(el)) addUrl(el.attr("content").ifBlank { el.attr("src").ifBlank { el.attr("href") } }, el)
+            }
+            document.select("link[rel=image_src]").forEach { addUrl(it.attr("href")) }
+        }
+
+        // 4) Script-embedded images (Daraz/Lazada/Shopify/generic) - filtered
+        scriptImages.forEach { addUrl(it) }
+
+        // 5) Conservative fallback: scoped gallery/carousel/zoom images only, never site-wide loose img[data-src]
+        if (urls.size < 3) {
+            val scopedSelectors = listOf(
+                ".pdp-mod-common-image img", ".gallery-preview-panel img",
+                ".woocommerce-product-gallery img", ".product-gallery img",
+                "[class*=product-gallery] img", "[class*=image-gallery] img",
+                "[class*=gallery-preview] img", "[class*=item-gallery] img",
+                "main [class*=gallery] img", "main [class*=carousel] img", "main [class*=slider] img",
+                "[data-gallery-role=gallery-placeholder] img", "img[data-zoom-image]", "img[data-large-image]"
+            )
+            for (sel in scopedSelectors) {
+                document.select(sel).take(24).forEach { img ->
+                    if (isInExcludedImageContext(img)) return@forEach
+                    addFromEl(img)
+                }
+                if (urls.size >= 8) break
+            }
+        }
+
         return urls.toList().take(12)
+    }
+
+    private fun isJunkOrLogoImage(url: String, el: Element?, allowMetaLogoRisk: Boolean): Boolean {
+        val lower = url.lowercase()
+        if (lower.startsWith("data:")) return true
+        val urlSignals = listOf(
+            "1x1", "pixel", "placeholder", "sprite.gif", "spacer", "blank.gif", "transparent.",
+            "/logo", "_logo", "-logo", "logo.", "logo/", "site-logo", "header-logo", "footer-logo",
+            "brandlogo", "store-logo", "favicon", "apple-touch-icon", "payment", "badge", "trust",
+            "social-share", "spinner", "loading", "ajax-loader", "avatar"
+        )
+        if (urlSignals.any { lower.contains(it) }) return true
+        // "icon" is noisy in CDNs; keep strong forms
+        if (lower.contains("/icon") || lower.contains("_icon") || lower.contains("-icon.") || lower.contains("icon-") || lower.contains("icons/")) return true
+
+        val alt = el?.attr("alt")?.lowercase().orEmpty()
+        val cls = (el?.className().orEmpty() + " " + el?.id().orEmpty() + " " + el?.parent()?.className().orEmpty()).lowercase()
+        val domSignals = listOf("logo", "site-branding", "brand-logo", "header-logo", "favicon", "icon", "payment", "badge", "trust")
+        if (domSignals.any { alt.contains(it) || cls.contains(it) }) return true
+        if (!allowMetaLogoRisk && (alt == "logo" || cls.contains("navbar-brand"))) return true
+        return false
+    }
+
+    private fun isInExcludedImageContext(el: Element): Boolean {
+        var cur: Element? = el
+        var depth = 0
+        while (cur != null && depth < 10) {
+            val tag = cur.tagName().lowercase()
+            if (tag in setOf("header", "footer", "nav", "aside")) return true
+            val id = cur.id().lowercase()
+            val cls = cur.className().lowercase()
+            val hay = "$id $cls"
+            val excludedTokens = listOf(
+                "logo", "site-header", "page-header", "masthead", "site-footer", "page-footer",
+                "related", "recommend", "upsell", "cross-sell", "cross_sell", "crosssell",
+                "you-may", "also-like", "also_like", "similar-product", "similar_product",
+                "recently-viewed", "recently_viewed", "product-recommend", "complementary",
+                "bought-together", "frequently-bought", "customers-also", "more-from", "more_from"
+            )
+            if (excludedTokens.any { hay.contains(it) }) return true
+            // common WooCommerce blocks
+            if (cls.contains("related") && cls.contains("products")) return true
+            if (cls.contains("upsells") || cls.contains("cross-sells")) return true
+            cur = cur.parent()
+            depth++
+        }
+        return false
     }
 
     private fun normalizeImageUrl(raw: String?): String? {
         if (raw.isNullOrBlank()) return null
-        var u = raw.trim().trim('"', '\'')
+        var u = raw.trim().trim('"', '\'').replace("\\/", "/").replace("\\u002F", "/")
         if (u.isEmpty() || u.equals("null", true)) return null
         if (u.startsWith("//")) u = "https:$u"
         if (!u.startsWith("http://") && !u.startsWith("https://")) return null
@@ -479,12 +720,41 @@ class ProductScraper(
         }
 
         val scriptImages = extractScriptImageUrls(html)
-        // Generic fallback: look for JSON-like price fields in scripts
-        val generic = Regex(""""(?:salePrice|price|currentPrice|amount)"\s*:\s*"?([0-9][0-9,]*(?:\.[0-9]+)?)"?""")
-            .find(html)?.groupValues?.getOrNull(1)
-        val parsed = MoneyParser.parse(generic)
-        if (parsed != null || scriptImages.isNotEmpty()) {
-            return ScriptPricing(imageUrl = scriptImages.firstOrNull(), imageUrls = scriptImages, price = parsed)
+        // Generic fallback: look for JSON-like price fields in scripts (best-effort)
+        val salePattern = Regex(""""(?:salePrice|sale_price|currentPrice|current_price|specialPrice|special_price|finalPrice|final_price|price|amount)"\s*:\s*"?([0-9][0-9,]*(?:\.[0-9]+)?)"?""")
+        val listPattern = Regex(""""(?:regularPrice|regular_price|originalPrice|original_price|listPrice|list_price|compareAtPrice|compare_at_price|oldPrice|old_price|wasPrice|was_price|basePrice|base_price|priceBeforeDiscount|previousPrice)"\s*:\s*"?([0-9][0-9,]*(?:\.[0-9]+)?)"?""")
+        val saleCandidates = salePattern.findAll(html).take(30).mapNotNull { MoneyParser.parse(it.groupValues[1]) }.filter { it > 0.0 }.toList()
+        val listCandidates = listPattern.findAll(html).take(30).mapNotNull { MoneyParser.parse(it.groupValues[1]) }.filter { it > 0.0 }.toList()
+
+        // Prefer a coherent (sale, list) pair when list > sale
+        var parsedSale = saleCandidates.minOrNull()
+        var parsedList = listCandidates.maxOrNull()
+        if (parsedSale != null && parsedList != null && parsedList <= parsedSale + 0.01) {
+            val betterList = listCandidates.filter { it > parsedSale!! + 0.01 }.maxOrNull()
+            parsedList = betterList
+        }
+        if (parsedSale == null) parsedSale = saleCandidates.firstOrNull()
+
+        // Some platforms (e.g., Omnisend/Shopify-like payloads) emit integer minor units (x100).
+        if (parsedSale != null && parsedList != null &&
+            parsedSale >= 10000.0 && parsedList >= 10000.0 &&
+            parsedSale % 1.0 == 0.0 && parsedList % 1.0 == 0.0
+        ) {
+            val s2 = parsedSale / 100.0
+            val l2 = parsedList / 100.0
+            if (s2 >= 1.0 && l2 > s2 + 0.01 && l2 < 2_000_000.0) {
+                parsedSale = s2
+                parsedList = l2
+            }
+        }
+
+        if (parsedSale != null || parsedList != null || scriptImages.isNotEmpty()) {
+            return ScriptPricing(
+                imageUrl = scriptImages.firstOrNull(),
+                imageUrls = scriptImages,
+                price = parsedSale,
+                listPrice = parsedList
+            )
         }
         return null
     }
@@ -492,10 +762,9 @@ class ProductScraper(
     private fun extractScriptImageUrls(html: String): List<String> {
         val urls = linkedSetOf<String>()
         fun add(raw: String?) {
-            val u = normalizeImageUrl(raw?.replace("\\/", "/")?.replace("\\u002F", "/")) ?: return
-            if (u.startsWith("data:")) return
-            val lower = u.lowercase()
-            if (lower.contains("1x1") || lower.contains("pixel") || lower.contains("placeholder") || lower.contains("sprite")) return
+            val u = normalizeImageUrl(raw) ?: return
+            if (u.length > 2000) return
+            if (isJunkOrLogoImage(u, el = null, allowMetaLogoRisk = false)) return
             urls += u
         }
         // Common gallery/image arrays in embedded JSON (Daraz/Lazada, Shopify, generic)
@@ -521,13 +790,15 @@ class ProductScraper(
                 } else add(g.ifBlank { m.value })
             }
         }
-        // last-resort: pick plausible product CDN image URLs (limited)
+        // last-resort: pick plausible product CDN image URLs (limited), still rejecting logos/junk
         if (urls.size < 2) {
-            patterns.last().findAll(html).take(60).forEach { m ->
-                val u = m.value
-                val l = u.lowercase()
-                if (l.contains("logo") || l.contains("icon") || l.contains("banner") || l.contains("sprite") || l.contains("payment")) return@forEach
-                if (l.contains("slatic") || l.contains("alicdn") || l.contains("lazcdn") || l.contains("shopify") || l.contains("cloudfront") || l.contains("/product") || l.contains("image")) add(u)
+            patterns.last().findAll(html).take(80).forEach { m ->
+                val candidate = normalizeImageUrl(m.value) ?: return@forEach
+                val l = candidate.lowercase()
+                val plausible = l.contains("slatic") || l.contains("alicdn") || l.contains("lazcdn") ||
+                    l.contains("shopify") || l.contains("cloudfront") || l.contains("cloudinary") ||
+                    l.contains("/product") || l.contains("/media/catalog") || l.contains("/uploads/")
+                if (plausible) add(candidate)
                 if (urls.size >= 12) return@forEach
             }
         }
@@ -567,85 +838,359 @@ class ProductScraper(
         return null
     }
 
-    private fun extractSpecs(jsonLd: JSONObject?, document: Document): List<Pair<String, String>> {
+    private fun extractSpecs(
+        jsonLd: JSONObject?,
+        document: Document,
+        description: String? = null
+    ): List<Pair<String, String>> {
         val out = LinkedHashMap<String, String>()
+        val seenKeys = mutableSetOf<String>()
 
-        fun put(k: String?, v: String?) {
-            val key = cleanText(k, 80) ?: return
-            val value = cleanText(v, 240) ?: return
-            if (key.length < 2 || value.length < 1) return
-            if (key.equals("description", true)) return
-            out.putIfAbsent(key, value)
+        fun normalizeKey(raw: String): String =
+            raw.lowercase().replace(Regex("[^a-z0-9]+"), " ").trim()
+
+        fun looksLikeJunkKey(raw: String): Boolean {
+            val key = raw.trim()
+            if (key.length !in 2..64) return true
+            if (key.contains(':') || key.contains('|') || key.contains("http", true)) return true
+            val words = key.split(Regex("\\s+")).filter { it.isNotBlank() }
+            if (words.size > 6) return true
+            if (words.isNotEmpty() && words.all { w -> w.none { it.isLetter() } }) return true
+            val lower = key.lowercase()
+            val junk = listOf(
+                "add to cart", "buy now", "add to wishlist", "wishlist", "compare", "share",
+                "review", "reviews", "rating", "ratings", "description", "additional information",
+                "related products", "you may also like", "select option", "choose an option",
+                "quantity", "subtotal", "total", "checkout", "continue shopping", "menu", "search",
+                "home", "shop", "category", "categories", "price", "sale", "new", "free shipping",
+                "delivery", "shipping", "return", "returns", "follow us", "sign in", "log in",
+                "register", "newsletter", "subscribe", "contact us", "about us", "quick view",
+                "payment", "secure payment", "customer service",
+                "sku", "mpn", "gtin", "gtin8", "gtin12", "gtin13", "gtin14", "ean", "upc",
+                "isbn", "barcode", "product code", "item code", "product id", "item id",
+                "part number", "model number"
+            )
+            if (junk.any { lower == it || lower.startsWith("$it ") }) return true
+            if (lower.endsWith("...") || lower.endsWith("…")) return true
+            return false
         }
 
-        // JSON-LD additionalProperty / PropertyValue
+        fun looksLikeJunkValue(raw: String): Boolean {
+            val value = raw.trim()
+            if (value.isEmpty()) return true
+            if (value.equals("n/a", true) || value == "-" || value == "—" || value == "null") return true
+            if (Regex("^https?://\\S+$").matches(value)) return true
+            if (value.split(Regex("\\s+")).count { it.isNotBlank() } > 60) return true
+            return false
+        }
+
+        fun put(k: String?, v: String?) {
+            val key = cleanText(k, 64)
+                ?.trim()
+                ?.trimEnd(':', '：', '-', '–', '—')
+                ?.trim()
+                ?: return
+            val value = cleanText(v, 260)?.trim() ?: return
+            if (key.length < 2 || value.length < 1) return
+            if (key.equals(value, ignoreCase = true)) return
+            if (looksLikeJunkKey(key) || looksLikeJunkValue(value)) return
+            val normalized = normalizeKey(key)
+            if (normalized.isBlank() || !seenKeys.add(normalized)) return
+            out[key] = value
+        }
+
+        /** Splits a description line like "Label: Value" or "Label - Value" when the label looks sane. */
+        fun splitSpecLine(line: String): Pair<String, String>? {
+            var text = line.trim()
+            text = text.removePrefix("•").removePrefix("·").removePrefix("*").trim()
+            if (text.startsWith("- ") || text.startsWith("– ") || text.startsWith("— ")) {
+                text = text.substring(2).trim()
+            }
+            if (text.length < 5) return null
+
+            fun accept(rawKey: String, rawValue: String): Pair<String, String>? {
+                val key = rawKey.trim().trimEnd(':', '：', '-', '–', '—').trim()
+                val value = rawValue.trim()
+                if (key.length !in 2..60 || value.length < 2) return null
+                if (key.split(Regex("\\s+")).count { it.isNotBlank() } > 6) return null
+                if (key.none { it.isLetter() }) return null
+                if (value.startsWith("//")) return null
+                return key to value
+            }
+
+            val colon = Regex("\\s*[:：]\\s*").find(text)
+            if (colon != null && colon.range.first > 0) {
+                accept(
+                    text.substring(0, colon.range.first),
+                    text.substring(colon.range.last + 1)
+                )?.let { return it }
+            }
+            for (separator in listOf(" – ", " — ", " - ")) {
+                val index = text.indexOf(separator)
+                if (index in 1..60) {
+                    accept(
+                        text.substring(0, index),
+                        text.substring(index + separator.length)
+                    )?.let { return it }
+                }
+            }
+            return null
+        }
+
+        fun parseRowElement(el: Element) {
+            val labelEl = el.selectFirst(".key, .key-title, .label, .name, .attribute-label, .spec-label, th, dt")
+            val valueEl = el.selectFirst(".value, .val, .key-value, .attribute-value, .spec-value, td, dd")
+            if (labelEl != null && valueEl != null && labelEl !== valueEl &&
+                !labelEl.text().trim().equals(valueEl.text().trim(), ignoreCase = true)
+            ) {
+                put(labelEl.text(), valueEl.text())
+                return
+            }
+            val text = el.text().trim()
+            if (text.isNotEmpty()) splitSpecLine(text)?.let { (k, v) -> put(k, v) }
+        }
+
+        fun parseScope(scope: Element) {
+            // Two-column table rows (WooCommerce attributes, generic spec tables).
+            scope.select("tr").take(80).forEach { tr ->
+                val cells = tr.select("th, td")
+                when {
+                    cells.size == 2 -> put(cells[0].text(), cells[1].text())
+                    cells.size > 2 -> put(cells[0].text(), cells.drop(1).joinToString(" ") { it.text() })
+                }
+            }
+            // Definition lists.
+            val dts = scope.select("dt")
+            val dds = scope.select("dd")
+            if (dts.isNotEmpty() && dts.size == dds.size) {
+                dts.forEachIndexed { i, dt -> put(dt.text(), dds.getOrNull(i)?.text()) }
+            }
+            // List / row style specs (label + value elements or "key: value" text).
+            scope.select("li, .row, .item, .attribute, .spec, .key-value, .specification-row").take(120).forEach { el ->
+                if (el.select("li, tr, .row, .attribute, .spec, .key-value, .specification-row").isNotEmpty()) {
+                    return@forEach
+                }
+                parseRowElement(el)
+            }
+            // Daraz/Lazada style: key-title followed by key-value.
+            scope.select(".key-title, .key").take(80).forEach { keyEl ->
+                val valueEl = keyEl.nextElementSibling()
+                    ?: keyEl.parent()?.selectFirst(".key-value, .value")
+                if (valueEl != null) put(keyEl.text(), valueEl.text())
+            }
+        }
+
+        fun mineFromText(text: String) {
+            text.split('\n').take(200).forEach { line ->
+                val clean = line.replace(Regex("\\s+"), " ").trim()
+                if (clean.length in 4..320) splitSpecLine(clean)?.let { (k, v) -> put(k, v) }
+            }
+        }
+
+        fun mineFromElement(el: Element) {
+            val raw = el.html()
+                .replace(Regex("(?i)<br\\s*/?>"), "\n")
+                .replace(Regex("(?i)</(p|li|div|h[1-6]|tr|section)>"), "\n")
+                .replace(Regex("<[^>]+>"), " ")
+                .replace("&nbsp;", " ")
+                .replace("&amp;", "&")
+                .replace("&quot;", "\"")
+                .replace("&#39;", "'")
+                .replace("&#215;", "×")
+                .replace("&times;", "×")
+                .replace("&lt;", "<")
+                .replace("&gt;", ">")
+            mineFromText(raw)
+            el.select("li").take(120).forEach { li ->
+                val text = li.text().replace(Regex("\\s+"), " ").trim()
+                if (text.length in 4..320) splitSpecLine(text)?.let { (k, v) -> put(k, v) }
+            }
+        }
+
+        // 1) JSON-LD additionalProperty / PropertyValue.
         val props = jsonLd?.opt("additionalProperty")
         when (props) {
             is JSONArray -> for (i in 0 until props.length()) {
                 val p = props.optJSONObject(i) ?: continue
-                put(p.optString("name").ifBlank { p.optString("propertyID") }, p.optString("value").ifBlank { p.optString("valueReference") })
+                put(
+                    p.optString("name").ifBlank { p.optString("propertyID") },
+                    p.optString("value").ifBlank { p.optString("valueReference") }
+                )
             }
             is JSONObject -> put(props.optString("name"), props.optString("value"))
         }
-        // JSON-LD other spec-ish fields
-        listOf("sku", "mpn", "gtin13", "gtin", "model", "color", "material", "size", "weight").forEach { k ->
+        // JSON-LD other spec-ish fields (skip internal identifiers like SKU/MPN/GTIN — they read as noise).
+        listOf("model", "color", "material", "size", "weight").forEach { k ->
             val v = jsonLd?.optString(k)?.takeIf { it.isNotBlank() && it != "null" }
             if (v != null) put(k.replaceFirstChar { c -> c.uppercase() }, v)
         }
 
-        // Tables (key/value rows)
-        document.select("table").take(10).forEach { table ->
-            val rows = table.select("tr")
-            if (rows.size !in 2..120) return@forEach
-            rows.forEach { tr ->
-                val cells = tr.select("th, td")
-                if (cells.size >= 2) {
-                    put(cells[0].text(), cells.drop(1).joinToString(" ") { it.text() })
-                }
-            }
-        }
-
-        // Definition lists
-        document.select("dl").take(8).forEach { dl ->
-            val dts = dl.select("dt")
-            val dds = dl.select("dd")
-            if (dts.isNotEmpty() && dts.size == dds.size) {
-                dts.forEachIndexed { i, dt -> put(dt.text(), dds.getOrNull(i)?.text()) }
-            }
-        }
-
-        // Common spec list blocks (Daraz/generic): "key: value" or split label/value elements
-        val specSelectors = listOf(
-            ".pdp-general-features li", ".specification-keys li", "[class*=specification] li",
-            "[class*=spec] li", "[class*=attribute] li", ".product-attributes li",
-            ".woocommerce-product-attributes tr", ".key-value li"
+        // 2) Product-scoped structured spec containers (highest confidence).
+        val containerSelectors = listOf(
+            ".woocommerce-product-attributes",
+            "#tab-additional_information",
+            ".woocommerce-Tabs-panel--additional_information",
+            ".product-specifications", ".product-specification", "[class*=product-spec]",
+            "[class*=pdp-spec]", "[class*=pdp-mod-spec]", ".pdp-general-features",
+            ".specification-keys", "[class*=specification]",
+            ".product-attributes", "[class*=product-attributes]",
+            "[class*=tech-spec]", "[class*=specs-table]", "#specifications", "#specification",
+            "[id*=specification]", "[data-tab*=spec]", "[data-tab*=additional]"
         )
-        for (sel in specSelectors) {
-            document.select(sel).take(80).forEach { el ->
-                val label = el.selectFirst(".key, [class*=key], [class*=label], [class*=name], th")?.text()
-                val value = el.selectFirst(".value, [class*=value], td")?.text()
-                if (!label.isNullOrBlank() && !value.isNullOrBlank()) {
-                    put(label, value)
-                } else {
-                    val text = el.text().trim()
-                    val parts = text.split(Regex("\\s*[:：]\\s*"), limit = 2)
-                    if (parts.size == 2) put(parts[0], parts[1])
-                }
+        val visitedContainers = mutableSetOf<Element>()
+        for (selector in containerSelectors) {
+            for (container in document.select(selector).take(6)) {
+                if (!visitedContainers.add(container)) continue
+                if (isInExcludedPriceContext(container)) continue
+                if (container.select("tr, dt, li, .row, .attribute, .spec, .key-title").isEmpty()) continue
+                parseScope(container)
             }
-            if (out.size >= 20) break
+            if (out.size >= 40) break
         }
 
-        // Daraz/Lazada often has "Brand", "SKU" etc in highlight/spec areas
-        document.select("[class*=pdp-mod-specification] .key-title, [class*=specification] .key").take(60).forEach { keyEl ->
-            val key = keyEl.text()
-            val valEl = keyEl.nextElementSibling() ?: keyEl.parent()?.selectFirst(".key-value, [class*=value]")
-            put(key, valEl?.text())
+        // 3) Specs written inside the product description / "about this item" blocks.
+        val descriptionSelectors = listOf(
+            "#tab-description", ".woocommerce-Tabs-panel--description",
+            ".woocommerce-product-details__short-description",
+            "[class*=product-description]", "[class*=ProductDescription]",
+            ".product-description", ".product__description", "#productDescription",
+            "#feature-bullets", ".pdp-product-desc", ".html-content.detail-content",
+            "[data-product-description]", ".rte", "#description", ".product-details"
+        )
+        val descriptionContainers = linkedSetOf<Element>()
+        for (selector in descriptionSelectors) {
+            document.select(selector).take(3).forEach { el ->
+                if (!isInExcludedPriceContext(el)) descriptionContainers += el
+            }
+            if (descriptionContainers.size >= 4) break
+        }
+        descriptionContainers.forEach { mineFromElement(it) }
+        description?.takeIf { it.isNotBlank() }?.let { mineFromText(it) }
+
+        // 4) Conservative fallback: only when we found little, and only for clear key/value tables.
+        if (out.size < 4) {
+            document.select("table").take(12).forEach { table ->
+                if (isInExcludedPriceContext(table)) return@forEach
+                val rows = table.select("tr")
+                if (rows.size !in 2..60) return@forEach
+                val pairs = rows.mapNotNull { tr ->
+                    val cells = tr.select("th, td")
+                    if (cells.size == 2) cells[0].text().trim() to cells[1].text().trim() else null
+                }
+                if (pairs.size >= 2 && pairs.size >= rows.size / 2) {
+                    pairs.forEach { (k, v) -> put(k, v) }
+                }
+            }
+        }
+        if (out.size < 4) {
+            document.select("dl").take(8).forEach { dl ->
+                if (isInExcludedPriceContext(dl)) return@forEach
+                val dts = dl.select("dt")
+                val dds = dl.select("dd")
+                if (dts.isNotEmpty() && dts.size == dds.size) {
+                    dts.forEachIndexed { i, dt -> put(dt.text(), dds.getOrNull(i)?.text()) }
+                }
+            }
         }
 
         return out.entries
-            .filter { (k, v) -> k.isNotBlank() && v.isNotBlank() && k.length <= 80 && v.length <= 300 }
+            .filter { (k, v) -> k.isNotBlank() && v.isNotBlank() && k.length <= 64 && v.length <= 260 }
             .take(60)
             .map { it.key to it.value }
+    }
+
+    /**
+     * Best-effort stock state. JSON-LD availability is authoritative; meta/microdata and visible
+     * product-page signals are used as fallbacks. Returns null when the page gives no clear signal.
+     */
+    private fun extractStockStatus(jsonLd: JSONObject?, document: Document): Boolean? {
+        fun availabilityOf(offer: JSONObject?): String? {
+            val raw = offer?.opt("availability") ?: return null
+            return when (raw) {
+                is String -> raw
+                is JSONArray -> raw.optString(0).takeIf { it.isNotBlank() }
+                else -> null
+            }
+        }
+
+        fun classify(raw: String?): Boolean? {
+            val value = raw?.lowercase()?.replace("_", "")?.replace(" ", "") ?: return null
+            if (value.isBlank()) return null
+            return when {
+                value.contains("outofstock") || value.contains("soldout") ||
+                    value.contains("discontinued") || value.contains("unavailable") -> false
+                value.contains("instock") || value.contains("limitedavailability") ||
+                    value.contains("onlineonly") || value.contains("preorder") ||
+                    value.contains("backorder") || value.contains("available") -> true
+                else -> null
+            }
+        }
+
+        // JSON-LD offers[].availability
+        when (val offers = jsonLd?.opt("offers")) {
+            is JSONObject -> classify(availabilityOf(offers))?.let { return it }
+            is JSONArray -> for (i in 0 until offers.length()) {
+                classify(availabilityOf(offers.optJSONObject(i)))?.let { return it }
+            }
+        }
+
+        // Meta tags
+        classify(
+            document.metaContent("product:availability")
+                ?: document.metaContent("og:availability")
+                ?: document.metaContent("availability")
+        )?.let { return it }
+
+        // Microdata
+        for (el in document.select("[itemprop=availability]").take(4)) {
+            classify(el.attr("href") + " " + el.attr("content") + " " + el.text())?.let { return it }
+        }
+
+        // Visible stock blocks (e.g. WooCommerce "<p class=stock out-of-stock>Out of stock</p>")
+        for (el in document.select(
+            ".stock, .stock-status, .availability, .product-availability, " +
+                ".woocommerce-variation-availability, [class*=stock-status], " +
+                "[class*=availability], [class*=inventory]"
+        ).take(12)) {
+            val text = el.text().lowercase()
+            if (text.isBlank()) continue
+            if (text.contains("out of stock") || text.contains("out-of-stock") ||
+                text.contains("sold out") || text.contains("unavailable") ||
+                text.contains("notify me")
+            ) return false
+            if (text.contains("in stock") || text.contains("available now") ||
+                text.contains("limited availability")
+            ) return true
+        }
+
+        // Body / product wrapper classes
+        val classHay = buildString {
+            document.body()?.className()?.lowercase()?.let { append(it) }
+            append(' ')
+            document.selectFirst(".product, .product-detail, .single-product, main")
+                ?.className()?.lowercase()?.let { append(it) }
+        }
+        if (classHay.contains("outofstock") || classHay.contains("out-of-stock") ||
+            classHay.contains("sold-out")
+        ) return false
+        if (classHay.contains("instock") || classHay.contains("in-stock")) return true
+
+        // Add-to-cart vs notify/sold-out buttons
+        var sawAddToCart = false
+        for (el in document.select("button, a").take(400)) {
+            val text = el.text().trim().lowercase()
+            if (text.isEmpty() || text.length > 40) continue
+            val disabled = el.hasAttr("disabled") || el.className().contains("disabled", true)
+            if (!disabled && (text == "add to cart" || text.startsWith("add to cart"))) {
+                sawAddToCart = true
+            }
+            if (text.contains("notify me") || text == "sold out" || text == "out of stock") {
+                return false
+            }
+        }
+        if (sawAddToCart) return true
+
+        return null
     }
 
     private fun cleanText(raw: String?, maxLen: Int): String? {

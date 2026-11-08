@@ -30,7 +30,7 @@ data class Category(
             onDelete = ForeignKey.SET_NULL
         )
     ],
-    indices = [Index("categoryId"), Index("isArchived")]
+    indices = [Index("categoryId"), Index("isArchived"), Index(value = ["isArchived", "createdAt"])]
 )
 data class WishItem(
     @PrimaryKey(autoGenerate = true) val id: Long = 0L,
@@ -49,6 +49,8 @@ data class WishItem(
     val specsJson: String = "[]",
     val brand: String? = null,
     val isArchived: Boolean = false,
+    /** Best-effort stock state: true = in stock, false = out of stock, null = unknown. */
+    val inStock: Boolean? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
     val lastCheckedAt: Long? = null,
@@ -100,7 +102,7 @@ data class WishItem(
             onDelete = ForeignKey.CASCADE
         )
     ],
-    indices = [Index("itemId")]
+    indices = [Index("itemId"), Index(value = ["itemId", "recordedAt"])]
 )
 data class PricePoint(
     @PrimaryKey(autoGenerate = true) val id: Long = 0L,
@@ -123,7 +125,18 @@ data class ItemWithStats(
     val categoryColor: Int? = null
 ) {
     val price: Double? get() = item.currentPrice ?: latestPrice
-    val peak: Double? get() = highest ?: item.listPrice
+
+    /** Reference price to compare against: the observed high, the store list price, or both. */
+    val peak: Double?
+        get() = listOfNotNull(highest, item.listPrice?.takeIf { it > 0.0 }).maxOrNull()
+
+    /** True when the store currently shows a struck-through list price above the sale price. */
+    val isOnSale: Boolean
+        get() {
+            val p = price ?: return false
+            val list = item.listPrice ?: return false
+            return list > p + 0.01
+        }
 
     /** How far below the observed peak the current price sits, in percent. */
     val discountPercent: Int?

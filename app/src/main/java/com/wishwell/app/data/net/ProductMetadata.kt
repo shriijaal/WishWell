@@ -20,7 +20,9 @@ data class ProductMetadata(
     val priceHistory: List<HistoricalPrice> = emptyList(),
     val description: String? = null,
     /** Ordered key/value specs (best-effort). */
-    val specs: List<Pair<String, String>> = emptyList()
+    val specs: List<Pair<String, String>> = emptyList(),
+    /** Best-effort stock state: true = in stock, false = out of stock, null = unknown. */
+    val inStock: Boolean? = null
 )
 
 sealed interface ScrapeResult {

@@ -1,5 +1,6 @@
 package com.wishwell.app.ui.tracking
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,19 +13,34 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.DriveFileMove
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -32,21 +48,25 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.wishwell.app.di.AppContainer
+import com.wishwell.app.ui.components.ConfirmDialog
 import com.wishwell.app.ui.components.EmptyState
 import com.wishwell.app.ui.components.LoadingSpinner
 import com.wishwell.app.ui.components.NoticeBar
 import com.wishwell.app.ui.components.SectionLabel
 import com.wishwell.app.ui.components.StatTile
-import com.wishwell.app.ui.components.WishCard
+import com.wishwell.app.ui.components.SwipeableWishCard
+import com.wishwell.app.ui.components.categoryIcon
 import com.wishwell.app.ui.theme.LocalWishExtraColors
+import com.wishwell.app.util.currencyDisplayName
 import com.wishwell.app.util.formatMoney
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PriceTrackingScreen(
     container: AppContainer,
     onOpenItem: (Long) -> Unit,
     onAddItem: () -> Unit,
-    onOpenSettings: () -> Unit
+    onEditItem: (Long) -> Unit
 ) {
     val viewModel: PriceTrackingViewModel = viewModel(
         factory = viewModelFactory {
@@ -56,43 +76,39 @@ fun PriceTrackingScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val extra = LocalWishExtraColors.current
     val colors = MaterialTheme.colorScheme
+    val pullState = rememberPullToRefreshState()
+    if (pullState.isRefreshing) {
+        LaunchedEffect(Unit) { viewModel.refreshAll() }
+    }
+    LaunchedEffect(state.refreshing) {
+        if (state.refreshing) pullState.startRefresh() else pullState.endRefresh()
+    }
+    var pendingDeleteId by remember { mutableStateOf<Long?>(null) }
+    var showBulkDeleteConfirm by remember { mutableStateOf(false) }
+    var showMoveDialog by remember { mutableStateOf(false) }
+    var revealedItemId by remember { mutableStateOf<Long?>(null) }
+    val listState = rememberLazyListState()
+    LaunchedEffect(state.selectionMode) { if (state.selectionMode) revealedItemId = null }
+    LaunchedEffect(listState.isScrollInProgress) { if (listState.isScrollInProgress) revealedItemId = null }
 
-    LazyColumn(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .statusBarsPadding(),
-        contentPadding = PaddingValues(top = 6.dp, bottom = 120.dp)
+            .statusBarsPadding()
+            .nestedScroll(pullState.nestedScrollConnection)
     ) {
-        item(key = "header") {
-            Column(modifier = Modifier.padding(horizontal = 20.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(top = 6.dp, bottom = if (state.selectionMode) 190.dp else 120.dp)
+        ) {
+            item(key = "header") {
+                Column(modifier = Modifier.padding(horizontal = 20.dp)) {
                     Text(
                         text = "PRICE TRACKING",
                         style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 3.sp),
-                        color = colors.onBackground,
-                        modifier = Modifier.weight(1f)
+                        color = colors.onBackground
                     )
-                    if (state.refreshing) {
-                        LoadingSpinner(size = 18.dp, modifier = Modifier.padding(9.dp))
-                    } else {
-                        IconButton(onClick = viewModel::refreshAll) {
-                            Icon(
-                                imageVector = Icons.Rounded.Refresh,
-                                contentDescription = "Refresh prices",
-                                tint = extra.muted,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-                    IconButton(onClick = onOpenSettings) {
-                        Icon(
-                            imageVector = Icons.Rounded.Settings,
-                            contentDescription = "Settings",
-                            tint = extra.muted,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
 
                 Spacer(Modifier.height(14.dp))
                 Text(
@@ -102,7 +118,7 @@ fun PriceTrackingScreen(
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "Drops, all-time lows, and targets reached — all in one place.",
+                    text = "Sales, drops, all-time lows, and targets reached — all in one place.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = extra.muted
                 )
@@ -146,7 +162,7 @@ fun PriceTrackingScreen(
                     if (summary.mixedCurrencies) {
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            text = "Totals use ${summary.currencyCode}. Other currencies aren't summed.",
+                            text = "Totals use ${currencyDisplayName(summary.currencyCode)}. Other currencies aren't summed.",
                             style = MaterialTheme.typography.labelSmall,
                             color = extra.muted
                         )
@@ -155,6 +171,8 @@ fun PriceTrackingScreen(
                 Spacer(Modifier.height(8.dp))
             }
         }
+
+
 
         state.message?.let { notice ->
             item(key = "notice") {
@@ -190,7 +208,7 @@ fun PriceTrackingScreen(
             !state.hasSignals -> item(key = "calm") {
                 EmptyState(
                     title = "No price moves right now",
-                    body = "We'll show drops, all-time lows, and target hits here as they happen. Tap refresh to check prices now.",
+                    body = "We'll show sales, drops, all-time lows, and target hits here as they happen. Tap refresh to check prices now.",
                     actionLabel = "Refresh prices",
                     onAction = viewModel::refreshAll
                 )
@@ -205,9 +223,28 @@ fun PriceTrackingScreen(
                         )
                     }
                     items(state.targetReached, key = { "target-${it.item.id}" }) { item ->
-                        WishCard(
+                        val id = item.item.id
+                        val selected = id in state.selectedIds
+                        SwipeableWishCard(
                             item = item,
-                            onClick = { onOpenItem(item.item.id) },
+                            onClick = {
+                                when {
+                                    revealedItemId != null && revealedItemId != id -> revealedItemId = null
+                                    state.selectionMode -> viewModel.toggleSelection(id)
+                                    else -> onOpenItem(id)
+                                }
+                            },
+                            onEdit = { onEditItem(id) },
+                            onRemove = { pendingDeleteId = id },
+                            selected = selected,
+                            selectionMode = state.selectionMode,
+                            onLongClick = {
+                                revealedItemId = null
+                                if (!state.selectionMode) viewModel.enterSelection(id) else viewModel.toggleSelection(id)
+                            },
+                            swipeEnabled = !state.selectionMode,
+                            isRevealed = revealedItemId == id,
+                            onRevealedChange = { open -> revealedItemId = if (open) id else if (revealedItemId == id) null else revealedItemId },
                             modifier = Modifier.padding(horizontal = 20.dp, vertical = 5.dp)
                         )
                     }
@@ -221,25 +258,63 @@ fun PriceTrackingScreen(
                         )
                     }
                     items(state.atLow, key = { "low-${it.item.id}" }) { item ->
-                        WishCard(
+                        val id = item.item.id
+                        val selected = id in state.selectedIds
+                        SwipeableWishCard(
                             item = item,
-                            onClick = { onOpenItem(item.item.id) },
+                            onClick = {
+                                when {
+                                    revealedItemId != null && revealedItemId != id -> revealedItemId = null
+                                    state.selectionMode -> viewModel.toggleSelection(id)
+                                    else -> onOpenItem(id)
+                                }
+                            },
+                            onEdit = { onEditItem(id) },
+                            onRemove = { pendingDeleteId = id },
+                            selected = selected,
+                            selectionMode = state.selectionMode,
+                            onLongClick = {
+                                revealedItemId = null
+                                if (!state.selectionMode) viewModel.enterSelection(id) else viewModel.toggleSelection(id)
+                            },
+                            swipeEnabled = !state.selectionMode,
+                            isRevealed = revealedItemId == id,
+                            onRevealedChange = { open -> revealedItemId = if (open) id else if (revealedItemId == id) null else revealedItemId },
                             modifier = Modifier.padding(horizontal = 20.dp, vertical = 5.dp)
                         )
                     }
                 }
 
-                if (state.biggestDrops.isNotEmpty()) {
+                if (state.onSale.isNotEmpty()) {
                     item(key = "drops-label") {
                         SectionLabel(
-                            text = "Biggest drops",
+                            text = "On sale now · ${state.onSale.size}",
                             modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
                         )
                     }
-                    items(state.biggestDrops, key = { "drop-${it.item.id}" }) { item ->
-                        WishCard(
+                    items(state.onSale, key = { "drop-${it.item.id}" }) { item ->
+                        val id = item.item.id
+                        val selected = id in state.selectedIds
+                        SwipeableWishCard(
                             item = item,
-                            onClick = { onOpenItem(item.item.id) },
+                            onClick = {
+                                when {
+                                    revealedItemId != null && revealedItemId != id -> revealedItemId = null
+                                    state.selectionMode -> viewModel.toggleSelection(id)
+                                    else -> onOpenItem(id)
+                                }
+                            },
+                            onEdit = { onEditItem(id) },
+                            onRemove = { pendingDeleteId = id },
+                            selected = selected,
+                            selectionMode = state.selectionMode,
+                            onLongClick = {
+                                revealedItemId = null
+                                if (!state.selectionMode) viewModel.enterSelection(id) else viewModel.toggleSelection(id)
+                            },
+                            swipeEnabled = !state.selectionMode,
+                            isRevealed = revealedItemId == id,
+                            onRevealedChange = { open -> revealedItemId = if (open) id else if (revealedItemId == id) null else revealedItemId },
                             modifier = Modifier.padding(horizontal = 20.dp, vertical = 5.dp)
                         )
                     }
@@ -261,11 +336,160 @@ fun PriceTrackingScreen(
                         )
                     }
                     items(state.checkFailed, key = { "failed-${it.item.id}" }) { item ->
-                        WishCard(
+                        val id = item.item.id
+                        val selected = id in state.selectedIds
+                        SwipeableWishCard(
                             item = item,
-                            onClick = { onOpenItem(item.item.id) },
+                            onClick = {
+                                when {
+                                    revealedItemId != null && revealedItemId != id -> revealedItemId = null
+                                    state.selectionMode -> viewModel.toggleSelection(id)
+                                    else -> onOpenItem(id)
+                                }
+                            },
+                            onEdit = { onEditItem(id) },
+                            onRemove = { pendingDeleteId = id },
+                            selected = selected,
+                            selectionMode = state.selectionMode,
+                            onLongClick = {
+                                revealedItemId = null
+                                if (!state.selectionMode) viewModel.enterSelection(id) else viewModel.toggleSelection(id)
+                            },
+                            swipeEnabled = !state.selectionMode,
+                            isRevealed = revealedItemId == id,
+                            onRevealedChange = { open -> revealedItemId = if (open) id else if (revealedItemId == id) null else revealedItemId },
                             modifier = Modifier.padding(horizontal = 20.dp, vertical = 5.dp)
                         )
+                    }
+                }
+            }
+        }
+        }
+
+        PullToRefreshContainer(
+            state = pullState,
+            modifier = Modifier.align(Alignment.TopCenter),
+            containerColor = colors.surface,
+            contentColor = colors.primary
+        )
+
+        androidx.compose.animation.AnimatedVisibility(
+            visible = state.selectionMode,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.slideInVertically { it / 2 },
+            exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.slideOutVertically { it / 2 }
+        ) {
+            TrackingSelectionBar(
+                count = state.selectedIds.size,
+                onCancel = viewModel::clearSelection,
+                onSelectAll = { viewModel.selectAll(state.allItems.map { it.item.id }) },
+                onMove = { showMoveDialog = true },
+                onRemove = { showBulkDeleteConfirm = true },
+                floating = true
+            )
+        }
+
+        pendingDeleteId?.let { id ->
+            ConfirmDialog(
+                title = "Remove item?",
+                body = "This saved item will be removed from your wishlist.",
+                confirmLabel = "Remove",
+                onConfirm = {
+                    viewModel.deleteItem(id)
+                    pendingDeleteId = null
+                },
+                onDismiss = { pendingDeleteId = null }
+            )
+        }
+        if (showBulkDeleteConfirm && state.selectionMode) {
+            ConfirmDialog(
+                title = "Remove ${state.selectedIds.size} items?",
+                body = "The selected items will be removed from your wishlist.",
+                confirmLabel = "Remove",
+                onConfirm = {
+                    viewModel.deleteSelected()
+                    showBulkDeleteConfirm = false
+                },
+                onDismiss = { showBulkDeleteConfirm = false }
+            )
+        }
+        if (showMoveDialog && state.selectionMode) {
+            AlertDialog(
+                onDismissRequest = { showMoveDialog = false },
+                title = { Text("Move to collection") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        TextButton(onClick = {
+                            viewModel.moveSelectedToCategory(null)
+                            showMoveDialog = false
+                        }, modifier = Modifier.fillMaxWidth()) {
+                            Text("Unsorted", modifier = Modifier.fillMaxWidth())
+                        }
+                        state.categories.forEach { cat ->
+                            TextButton(onClick = {
+                                viewModel.moveSelectedToCategory(cat.category.id)
+                                showMoveDialog = false
+                            }, modifier = Modifier.fillMaxWidth()) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(categoryIcon(cat.category.name), contentDescription = null, modifier = Modifier.size(16.dp), tint = extra.muted)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(cat.category.name)
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = { TextButton(onClick = { showMoveDialog = false }) { Text("Cancel") } }
+            )
+        }
+    }
+}
+
+@Composable
+private fun TrackingSelectionBar(
+    count: Int,
+    onCancel: () -> Unit,
+    onSelectAll: () -> Unit,
+    onMove: () -> Unit,
+    onRemove: () -> Unit,
+    floating: Boolean = false
+) {
+    val colors = MaterialTheme.colorScheme
+    val extra = LocalWishExtraColors.current
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = if (floating) colors.surface else extra.sunken.copy(alpha = 0.55f),
+        tonalElevation = if (floating) 6.dp else 0.dp,
+        shadowElevation = if (floating) 10.dp else 0.dp,
+        border = BorderStroke(1.dp, if (floating) extra.hairline.copy(alpha = 0.9f) else extra.hairline)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onCancel, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Rounded.Close, contentDescription = "Cancel selection", tint = extra.muted, modifier = Modifier.size(18.dp))
+                }
+                Spacer(Modifier.width(4.dp))
+                Text("$count selected", style = MaterialTheme.typography.titleSmall, color = colors.onSurface, modifier = Modifier.weight(1f))
+                TextButton(onClick = onSelectAll) { Text("Select all", color = colors.primary) }
+            }
+            Spacer(Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Surface(onClick = onMove, shape = RoundedCornerShape(12.dp), color = colors.primary.copy(alpha = 0.12f), modifier = Modifier.weight(1f)) {
+                    Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.DriveFileMove, contentDescription = null, tint = colors.primary, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Move", style = MaterialTheme.typography.labelLarge, color = colors.primary)
+                    }
+                }
+                Surface(onClick = onRemove, shape = RoundedCornerShape(12.dp), color = extra.terracotta.copy(alpha = 0.14f), modifier = Modifier.weight(1f)) {
+                    Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.DeleteOutline, contentDescription = null, tint = extra.terracotta, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Remove", style = MaterialTheme.typography.labelLarge, color = extra.terracotta)
                     }
                 }
             }

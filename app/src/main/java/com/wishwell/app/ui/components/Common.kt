@@ -1,17 +1,28 @@
 package com.wishwell.app.ui.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -23,9 +34,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CardGiftcard
 import androidx.compose.material.icons.rounded.Category
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Checkroom
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Devices
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FitnessCenter
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material3.AlertDialog
@@ -39,10 +53,17 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
@@ -337,87 +358,273 @@ fun PriceRangeMeter(item: ItemWithStats, modifier: Modifier = Modifier) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun WishCard(item: ItemWithStats, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun WishCard(
+    item: ItemWithStats,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    selected: Boolean = false,
+    selectionMode: Boolean = false,
+    onLongClick: (() -> Unit)? = null
+) {
     val colors = MaterialTheme.colorScheme
     val extra = LocalWishExtraColors.current
     val price = item.price
     val listPrice = item.item.listPrice
     val belowTarget = item.item.targetPrice?.let { t -> price != null && price <= t + 0.005 } == true
+    val borderColor = when {
+        selected -> colors.primary
+        else -> extra.hairline
+    }
 
     Surface(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(18.dp),
-        color = colors.surface,
-        border = BorderStroke(1.dp, extra.hairline)
-    ) {
-        Row(modifier = Modifier.padding(10.dp)) {
-            ProductThumb(
-                imageUrl = item.item.imageUrl,
-                storeName = item.item.storeName,
-                modifier = Modifier.size(92.dp),
-                shape = RoundedCornerShape(14.dp)
-            )
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = item.item.storeName.uppercase(),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = extra.muted,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
-                    val badge = when {
-                        item.isAtLowest -> "Low" to BadgeTone.LOW
-                        belowTarget -> "Target" to BadgeTone.GOOD
-                        item.discountPercent != null && item.discountPercent!! >= 1 ->
-                            "-${item.discountPercent}%" to BadgeTone.GOOD
-                        item.item.lastCheckFailed -> "Check failed" to BadgeTone.HIGH
-                        else -> null
-                    }
-                    if (badge != null) DealBadge(badge.first, badge.second)
+            .then(
+                if (onLongClick != null || selectionMode) {
+                    Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
+                } else {
+                    Modifier.clickable(onClick = onClick)
                 }
-                Spacer(Modifier.height(3.dp))
-                Text(
-                    text = item.item.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = colors.onSurface,
-                    maxLines = 2,
-                    minLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(Modifier.height(5.dp))
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text(
-                        text = formatMoney(price, item.item.currencyCode),
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
-                        color = colors.onSurface,
-                        maxLines = 1
+            ),
+        shape = RoundedCornerShape(18.dp),
+        color = if (selected) colors.primary.copy(alpha = 0.08f) else colors.surface,
+        border = BorderStroke(if (selected) 1.5.dp else 1.dp, borderColor)
+    ) {
+        Box {
+            Row(modifier = Modifier.padding(10.dp)) {
+                Box {
+                    ProductThumb(
+                        imageUrl = item.item.imageUrl,
+                        storeName = item.item.storeName,
+                        modifier = Modifier.size(92.dp),
+                        shape = RoundedCornerShape(14.dp)
                     )
-                    if (listPrice != null && price != null && listPrice > price + 0.01) {
-                        Spacer(Modifier.width(6.dp))
+                    if (selectionMode) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .padding(4.dp)
+                                .size(22.dp)
+                                .clip(CircleShape)
+                                .background(if (selected) colors.primary else colors.surface.copy(alpha = 0.92f))
+                                .border(1.dp, if (selected) colors.primary else extra.hairline, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (selected) {
+                                Icon(
+                                    Icons.Rounded.CheckCircle,
+                                    contentDescription = "Selected",
+                                    tint = colors.onPrimary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = formatMoney(listPrice, item.item.currencyCode),
-                            style = MaterialTheme.typography.bodySmall,
+                            text = item.item.storeName.uppercase(),
+                            style = MaterialTheme.typography.labelSmall,
                             color = extra.muted,
-                            textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        val badge = when {
+                            item.isAtLowest -> "Low" to BadgeTone.LOW
+                            belowTarget -> "Target" to BadgeTone.GOOD
+                            item.discountPercent != null && item.discountPercent!! >= 1 ->
+                                "-${item.discountPercent}%" to BadgeTone.GOOD
+                            item.item.lastCheckFailed -> "Check failed" to BadgeTone.HIGH
+                            else -> null
+                        }
+                        if (badge != null) DealBadge(badge.first, badge.second)
+                    }
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        text = item.item.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = colors.onSurface,
+                        maxLines = 2,
+                        minLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(Modifier.height(5.dp))
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        Text(
+                            text = formatMoney(price, item.item.currencyCode),
+                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+                            color = colors.onSurface,
                             maxLines = 1
                         )
+                        if (listPrice != null && price != null && listPrice > price + 0.01) {
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = formatMoney(listPrice, item.item.currencyCode),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = extra.muted,
+                                textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough,
+                                maxLines = 1
+                            )
+                        }
                     }
-                }
-                if (item.lowest != null && item.highest != null && item.rangePosition != null) {
-                    Spacer(Modifier.height(8.dp))
-                    PriceRangeMeter(item)
-                } else {
-                    Spacer(Modifier.height(2.dp))
+                    if (item.item.inStock == false) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "Out of stock",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = extra.terracotta
+                        )
+                    }
+                    if (item.lowest != null && item.highest != null && item.rangePosition != null) {
+                        Spacer(Modifier.height(8.dp))
+                        PriceRangeMeter(item)
+                    } else {
+                        Spacer(Modifier.height(2.dp))
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+fun SwipeableWishCard(
+    item: ItemWithStats,
+    onClick: () -> Unit,
+    onEdit: () -> Unit,
+    onRemove: () -> Unit,
+    modifier: Modifier = Modifier,
+    selected: Boolean = false,
+    selectionMode: Boolean = false,
+    onLongClick: (() -> Unit)? = null,
+    swipeEnabled: Boolean = true,
+    isRevealed: Boolean = false,
+    onRevealedChange: (Boolean) -> Unit = {}
+) {
+    val colors = MaterialTheme.colorScheme
+    val extra = LocalWishExtraColors.current
+    val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    val actionWidthPx = with(density) { 204.dp.toPx() }
+    val offsetX = remember { Animatable(0f) }
+    val canSwipe = swipeEnabled && !selectionMode
+
+    LaunchedEffect(canSwipe) {
+        if (!canSwipe) {
+            if (offsetX.value < -4f) offsetX.snapTo(0f)
+            if (isRevealed) onRevealedChange(false)
+        }
+    }
+
+    LaunchedEffect(isRevealed) {
+        if (!isRevealed && offsetX.value < -8f) {
+            offsetX.snapTo(0f)
+        }
+    }
+
+    val dragState = rememberDraggableState { delta ->
+        if (!canSwipe) return@rememberDraggableState
+        scope.launch {
+            val next = (offsetX.value + delta).coerceIn(-actionWidthPx, 0f)
+            offsetX.snapTo(next)
+        }
+    }
+
+    fun settle() {
+        scope.launch {
+            val target = if (offsetX.value < -actionWidthPx * 0.38f) -actionWidthPx else 0f
+            offsetX.snapTo(target)
+            onRevealedChange(target < 0f)
+        }
+    }
+
+    fun closeReveal() {
+        scope.launch { offsetX.snapTo(0f) }
+        onRevealedChange(false)
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+    ) {
+        // Actions behind (revealed when card slides left)
+        Row(
+            modifier = Modifier
+                .matchParentSize()
+                .background(if (offsetX.value < -2f) extra.sunken.copy(alpha = 0.45f) else Color.Transparent)
+                .padding(end = 8.dp),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (canSwipe) {
+                Surface(
+                    onClick = {
+                        closeReveal()
+                        onEdit()
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                    color = colors.primary.copy(alpha = 0.14f),
+                    modifier = Modifier.padding(end = 6.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Rounded.Edit, contentDescription = "Edit", tint = colors.primary, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Edit", style = MaterialTheme.typography.labelLarge, color = colors.primary)
+                    }
+                }
+                Surface(
+                    onClick = {
+                        closeReveal()
+                        onRemove()
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                    color = extra.terracotta.copy(alpha = 0.16f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Rounded.DeleteOutline, contentDescription = "Remove", tint = extra.terracotta, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Remove", style = MaterialTheme.typography.labelLarge, color = extra.terracotta)
+                    }
+                }
+            }
+        }
+
+        // Foreground card (draggable)
+        WishCard(
+            item = item,
+            onClick = {
+                if (offsetX.value < -8f) {
+                    closeReveal()
+                } else {
+                    onClick()
+                }
+            },
+            selected = selected,
+            selectionMode = selectionMode,
+            onLongClick = onLongClick,
+            modifier = Modifier
+                .fillMaxWidth()
+                .offset { IntOffset(offsetX.value.roundToInt(), 0) }
+                .draggable(
+                    state = dragState,
+                    orientation = Orientation.Horizontal,
+                    enabled = canSwipe,
+                    onDragStopped = { settle() }
+                )
+        )
     }
 }
 

@@ -36,6 +36,9 @@ interface ItemDao {
     @Query("$ITEMS_WITH_STATS ORDER BY i.createdAt DESC")
     suspend fun getAllWithStats(): List<ItemWithStats>
 
+    @Query("SELECT * FROM items ORDER BY createdAt ASC")
+    suspend fun getAllItemsRaw(): List<WishItem>
+
     @Query("SELECT * FROM items WHERE id = :id")
     suspend fun getById(id: Long): WishItem?
 
@@ -51,6 +54,12 @@ interface ItemDao {
     @Delete
     suspend fun delete(item: WishItem)
 
+    @Query("DELETE FROM items WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<Long>)
+
+    @Query("UPDATE items SET categoryId = :categoryId, updatedAt = :updatedAt WHERE id IN (:ids)")
+    suspend fun setCategoryForIds(ids: List<Long>, categoryId: Long?, updatedAt: Long)
+
     @Query("SELECT * FROM price_points WHERE itemId = :itemId ORDER BY recordedAt ASC")
     fun observeHistory(itemId: Long): Flow<List<PricePoint>>
 
@@ -60,11 +69,17 @@ interface ItemDao {
     @Query("SELECT * FROM price_points WHERE itemId = :itemId ORDER BY recordedAt DESC LIMIT 1")
     suspend fun latestPoint(itemId: Long): PricePoint?
 
+    @Query("SELECT COUNT(*) FROM price_points WHERE itemId = :itemId")
+    suspend fun countPoints(itemId: Long): Int
+
     @Query("SELECT MIN(price) FROM price_points WHERE itemId = :itemId")
     suspend fun minPrice(itemId: Long): Double?
 
     @Insert
     suspend fun insertPoint(point: PricePoint): Long
+
+    @Query("SELECT * FROM price_points ORDER BY itemId ASC, recordedAt ASC")
+    suspend fun getAllPoints(): List<PricePoint>
 
     @Query("SELECT COUNT(*) FROM items")
     suspend fun count(): Int

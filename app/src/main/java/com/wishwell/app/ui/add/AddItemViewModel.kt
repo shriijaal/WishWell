@@ -33,6 +33,7 @@ data class AddItemUiState(
     val notes: String = "",
     val description: String = "",
     val specs: List<Pair<String, String>> = emptyList(),
+    val inStock: Boolean? = null,
     val categoryId: Long? = null,
     val categories: List<CategoryWithCount> = emptyList(),
     val saving: Boolean = false,
@@ -122,6 +123,7 @@ class AddItemViewModel(
                             if (imgs.size > 1) add("${imgs.size} images")
                             if (!metadata.description.isNullOrBlank()) add("description")
                             if (metadata.specs.isNotEmpty()) add("${metadata.specs.size} spec(s)")
+                            metadata.inStock?.let { add(if (it) "in stock" else "out of stock") }
                         }
                         s.copy(
                             fetching = false,
@@ -136,6 +138,7 @@ class AddItemViewModel(
                             brand = metadata.brand ?: s.brand,
                             description = if (s.description.isBlank()) metadata.description.orEmpty() else s.description,
                             specs = if (metadata.specs.isNotEmpty()) metadata.specs else s.specs,
+                            inStock = metadata.inStock ?: s.inStock,
                             fetchedHistory = metadata.priceHistory,
                             fetchError = if (metadata.price == null) {
                                 "We found the product but not its price. Add it below."
@@ -200,7 +203,8 @@ class AddItemViewModel(
                         brand = current.brand.trim().takeIf { it.isNotEmpty() },
                         priceHistory = current.fetchedHistory,
                         description = current.description,
-                        specs = current.specs
+                        specs = current.specs,
+                        inStock = current.inStock
                     )
                 )
                 onSaved(id)

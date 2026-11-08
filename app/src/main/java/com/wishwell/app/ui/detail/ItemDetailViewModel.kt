@@ -55,45 +55,11 @@ class ItemDetailViewModel(
     private val _compareStates = MutableStateFlow<Map<String, CompareSearchState>>(emptyMap())
     val compareStates: StateFlow<Map<String, CompareSearchState>> = _compareStates.asStateFlow()
 
-    /** Tracks auto-fetch attempts per store+query to avoid spam while allowing context-ready retries. */
-    private val autoRequested = mutableSetOf<String>()
-
     private val _busy = MutableStateFlow(false)
     val busy: StateFlow<Boolean> = _busy.asStateFlow()
 
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
-
-    init {
-        viewModelScope.launch {
-            combine(item, comparisons) { target, links -> target to links }
-                .collect { (target, links) ->
-                    if (target == null || links.isEmpty()) return@collect
-                    val query = container.recommendations.searchQuery(target.item)
-                    for (link in links.take(12)) {
-                        val reqKey = requestKey(link.storeName, query)
-                        if (reqKey in autoRequested) continue
-                        val cur = _compareStates.value[link.storeName]
-                        if (cur is CompareSearchState.Loading) continue
-                        // Auto-fetch when missing, or retry once when previous attempt found nothing/errored
-                        // and we now have full target context (avoids the early item-null race).
-                        val shouldFetch = cur == null ||
-                            cur is CompareSearchState.Empty ||
-                            cur is CompareSearchState.Error
-                        if (!shouldFetch) {
-                            autoRequested += reqKey
-                            continue
-                        }
-                        autoRequested += reqKey
-                        fetchStoreProducts(link, target, query)
-                        delay(450)
-                    }
-                }
-        }
-    }
-
-    private fun requestKey(storeName: String, query: String): String =
-        "$storeName|${query.lowercase().trim()}"
 
     fun refresh() {
         if (_busy.value) return
@@ -166,6 +132,21 @@ class ItemDetailViewModel(
             val target = item.value
             val query = target?.let { container.recommendations.searchQuery(it.item) }.orEmpty()
             fetchStoreProducts(link, target, query)
+        }
+    }
+
+    fun searchAllStores() {
+        viewModelScope.launch {
+            val target = item.value ?: return@launch
+            val links = comparisons.value
+            if (links.isEmpty()) return@launch
+            val query = container.recommendations.searchQuery(target.item)
+            for (link in links.take(12)) {
+                val cur = _compareStates.value[link.storeName]
+                if (cur is CompareSearchState.Loading) continue
+                fetchStoreProducts(link, target, query)
+                delay(450)
+            }
         }
     }
 

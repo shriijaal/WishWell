@@ -40,7 +40,8 @@ data class NewItemDraft(
     val brand: String?,
     val priceHistory: List<HistoricalPrice> = emptyList(),
     val description: String = "",
-    val specs: List<Pair<String, String>> = emptyList()
+    val specs: List<Pair<String, String>> = emptyList(),
+    val inStock: Boolean? = null
 )
 
 sealed interface RefreshResult {
@@ -123,6 +124,7 @@ class WishlistRepository(
                 description = draft.description.trim().take(4000),
                 specsJson = WishItem.encodeSpecs(draft.specs),
                 brand = draft.brand?.trim()?.takeIf { it.isNotEmpty() },
+                inStock = draft.inStock,
                 createdAt = now,
                 updatedAt = now,
                 lastCheckedAt = if (draft.price != null) now else null
@@ -160,9 +162,88 @@ class WishlistRepository(
         notifyWidgetsChanged()
     }
 
+    suspend fun setCategoryForItems(ids: Collection<Long>, categoryId: Long?) = withContext(Dispatchers.IO) {
+        val unique = ids.distinct()
+        if (unique.isEmpty()) return@withContext
+        val now = System.currentTimeMillis()
+        unique.chunked(900).forEach { chunk ->
+            itemDao.setCategoryForIds(chunk, categoryId, now)
+        }
+        notifyWidgetsChanged()
+    }
+
     suspend fun setNotes(id: Long, notes: String) = withContext(Dispatchers.IO) {
         val item = itemDao.getById(id) ?: return@withContext
         itemDao.update(item.copy(notes = notes.trim().take(600), updatedAt = System.currentTimeMillis()))
+        notifyWidgetsChanged()
+    }
+
+    suspend fun updateItem(
+        id: Long,
+        title: String,
+        storeName: String,
+        productUrl: String,
+        imageUrls: List<String>,
+        currencyCode: String,
+        currentPrice: Double?,
+        listPrice: Double?,
+        targetPrice: Double?,
+        categoryId: Long?,
+        notes: String,
+        description: String,
+        specs: List<Pair<String, String>>,
+        brand: String?
+    ) = withContext(Dispatchers.IO) {
+        val existing = itemDao.getById(id) ?: throw IllegalArgumentException("Item not found.")
+        val cleanTitle = title.trim().take(180)
+        require(cleanTitle.isNotEmpty()) { "Give the item a name first." }
+        val now = System.currentTimeMillis()
+        val normalizedImages = imageUrls.map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(12)
+        val normalizedCurrency = currencyCode.uppercase().trim().take(3).ifBlank { existing.currencyCode }
+        val cleanStore = storeName.trim().ifBlank {
+            runCatching { URI(productUrl.trim()).host }.getOrNull()
+                ?.takeIf { it.isNotBlank() }
+                ?.let { stores.displayNameForHost(it) }
+                ?: existing.storeName
+        }
+        val oldPrice = existing.currentPrice
+        val priceChanged = currentPrice != null && (oldPrice == null || abs(oldPrice - currentPrice) >= 0.005)
+        if (priceChanged) {
+            val lastPoint = itemDao.latestPoint(id)
+            val sameRecently = lastPoint != null &&
+                abs(lastPoint.price - currentPrice!!) < 0.005 &&
+                lastPoint.currencyCode.equals(normalizedCurrency, ignoreCase = true) &&
+                now - lastPoint.recordedAt < 12 * 60 * 60 * 1000L
+            if (!sameRecently) {
+                itemDao.insertPoint(
+                    PricePoint(
+                        itemId = id,
+                        price = currentPrice!!,
+                        currencyCode = normalizedCurrency,
+                        recordedAt = now
+                    )
+                )
+            }
+        }
+        val updated = existing.copy(
+            title = cleanTitle,
+            storeName = cleanStore,
+            productUrl = productUrl.trim(),
+            imageUrl = normalizedImages.firstOrNull(),
+            imageUrlsJson = WishItem.encodeImageUrls(normalizedImages),
+            currencyCode = normalizedCurrency,
+            currentPrice = currentPrice,
+            listPrice = listPrice,
+            targetPrice = targetPrice,
+            categoryId = categoryId,
+            notes = notes.trim().take(600),
+            description = description.trim().take(4000),
+            specsJson = WishItem.encodeSpecs(specs),
+            brand = brand?.trim()?.takeIf { it.isNotEmpty() },
+            updatedAt = now,
+            lastCheckFailed = false
+        )
+        itemDao.update(updated)
         notifyWidgetsChanged()
     }
 
@@ -172,6 +253,13 @@ class WishlistRepository(
             itemDao.delete(item)
             notifyWidgetsChanged()
         }
+    }
+
+    suspend fun deleteItems(ids: Collection<Long>) = withContext(Dispatchers.IO) {
+        val unique = ids.distinct()
+        if (unique.isEmpty()) return@withContext
+        unique.chunked(900).forEach { chunk -> itemDao.deleteByIds(chunk) }
+        notifyWidgetsChanged()
     }
 
     // -------------------------------------------------------- price checks
@@ -199,7 +287,7 @@ class WishlistRepository(
 
         val previousLow = itemDao.minPrice(id)
         val lastPoint = itemDao.latestPoint(id)
-        val historyBefore = itemDao.history(id)
+        val historyCountBefore = itemDao.countPoints(id)
 
         mergeImportedHistory(id, metadata.priceHistory, metadata.currencyCode ?: item.currencyCode, now, mutableListOf())
 
@@ -233,15 +321,18 @@ class WishlistRepository(
             imageUrl = mergedImages.firstOrNull() ?: item.imageUrl ?: metadata.imageUrl,
             imageUrlsJson = if (mergedImages.isNotEmpty()) WishItem.encodeImageUrls(mergedImages) else item.imageUrlsJson,
             description = if (item.description.isBlank()) metadata.description?.trim()?.take(4000).orEmpty() else item.description,
-            specsJson = if (item.specs().isEmpty() && metadata.specs.isNotEmpty()) WishItem.encodeSpecs(metadata.specs) else item.specsJson,
+            // Specs are read-only in the editor, so refresh always mirrors the latest extraction
+            // (this also clears stale noise such as SKU/MPN rows).
+            specsJson = WishItem.encodeSpecs(metadata.specs),
             brand = item.brand ?: metadata.brand,
+            inStock = metadata.inStock ?: item.inStock,
             lastCheckedAt = now,
             lastCheckFailed = false,
             updatedAt = now
         )
         itemDao.update(updated)
 
-        val isNewLow = previousLow != null && newPrice < previousLow - 0.005 && historyBefore.size >= 2
+        val isNewLow = previousLow != null && newPrice < previousLow - 0.005 && historyCountBefore >= 2
         handleAlerts(updated, item.currentPrice, newPrice, isNewLow)
         notifyWidgetsChanged()
 
@@ -605,4 +696,234 @@ class WishlistRepository(
 
     /** Parses a user-typed price, tolerating symbols and commas. */
     fun parsePriceInput(text: String): Double? = MoneyParser.parse(text)
+
+    // ------------------------------------------------------------- backups
+
+    data class BackupImportResult(
+        val categoriesAdded: Int = 0,
+        val itemsAdded: Int = 0,
+        val itemsMerged: Int = 0,
+        val historyPointsAdded: Int = 0
+    )
+
+    suspend fun exportBackupJson(): String = withContext(Dispatchers.IO) {
+        val categories = categoryDao.getAll()
+        val items = itemDao.getAllItemsRaw()
+        val pointsByItem = itemDao.getAllPoints().groupBy { it.itemId }
+        val categoryNameById = categories.associate { it.id to it.name }
+
+        val root = org.json.JSONObject()
+            .put("format", "wishwell-backup")
+            .put("version", 1)
+            .put("exportedAt", System.currentTimeMillis())
+
+        val catsArr = org.json.JSONArray()
+        categories.forEach { c ->
+            catsArr.put(
+                org.json.JSONObject()
+                    .put("name", c.name)
+                    .put("colorArgb", c.colorArgb)
+                    .put("emoji", c.emoji)
+                    .put("sortOrder", c.sortOrder)
+                    .put("createdAt", c.createdAt)
+            )
+        }
+        root.put("categories", catsArr)
+
+        val itemsArr = org.json.JSONArray()
+        items.forEach { item ->
+            val o = org.json.JSONObject()
+                .put("title", item.title)
+                .put("storeName", item.storeName)
+                .put("productUrl", item.productUrl)
+                .put("imageUrl", item.imageUrl)
+                .put("imageUrls", org.json.JSONArray(item.imageUrls()))
+                .put("currencyCode", item.currencyCode)
+                .put("targetPrice", item.targetPrice)
+                .put("categoryName", item.categoryId?.let { categoryNameById[it] })
+                .put("notes", item.notes)
+                .put("description", item.description)
+                .put("specs", org.json.JSONArray().also { arr ->
+                    item.specs().forEach { (k, v) -> arr.put(org.json.JSONObject().put("k", k).put("v", v)) }
+                })
+                .put("brand", item.brand)
+                .put("isArchived", item.isArchived)
+                .put("inStock", item.inStock)
+                .put("createdAt", item.createdAt)
+                .put("updatedAt", item.updatedAt)
+                .put("lastCheckedAt", item.lastCheckedAt)
+                .put("lastCheckFailed", item.lastCheckFailed)
+                .put("currentPrice", item.currentPrice)
+                .put("listPrice", item.listPrice)
+
+            val histArr = org.json.JSONArray()
+            pointsByItem[item.id].orEmpty().forEach { p ->
+                histArr.put(
+                    org.json.JSONObject()
+                        .put("price", p.price)
+                        .put("currencyCode", p.currencyCode)
+                        .put("recordedAt", p.recordedAt)
+                )
+            }
+            o.put("history", histArr)
+            itemsArr.put(o)
+        }
+        root.put("items", itemsArr)
+        root.toString(2)
+    }
+
+    suspend fun importBackupJson(text: String): BackupImportResult = withContext(Dispatchers.IO) {
+        val root = runCatching { org.json.JSONObject(text) }.getOrElse {
+            throw IllegalArgumentException("That backup file isn't valid JSON.")
+        }
+        val format = root.optString("format")
+        if (format.isNotBlank() && format != "wishwell-backup") {
+            throw IllegalArgumentException("This file doesn't look like a WishWell backup.")
+        }
+        val now = System.currentTimeMillis()
+        var categoriesAdded = 0
+        var itemsAdded = 0
+        var itemsMerged = 0
+        var historyPointsAdded = 0
+
+        // 1) categories (match by name, case-insensitive)
+        val existingCategories = categoryDao.getAll().toMutableList()
+        val categoryIdByName = existingCategories.associate { it.name.trim().lowercase() to it.id }.toMutableMap()
+        val catsArr = root.optJSONArray("categories") ?: org.json.JSONArray()
+        for (i in 0 until catsArr.length()) {
+            val c = catsArr.optJSONObject(i) ?: continue
+            val name = c.optString("name").trim().take(40)
+            if (name.isBlank()) continue
+            val key = name.lowercase()
+            if (categoryIdByName.containsKey(key)) continue
+            val category = Category(
+                name = name,
+                colorArgb = c.optInt("colorArgb", 0xFF4E8A6A.toInt()),
+                emoji = c.optString("emoji").takeIf { it.isNotBlank() && it != "null" },
+                sortOrder = c.optInt("sortOrder", existingCategories.size),
+                createdAt = c.optLong("createdAt", now).takeIf { it > 0L } ?: now
+            )
+            val newId = categoryDao.insert(category)
+            existingCategories += category.copy(id = newId)
+            categoryIdByName[key] = newId
+            categoriesAdded++
+        }
+
+        // 2) items + history (merge by normalized product URL when available)
+        val existingItems = itemDao.getAllItemsRaw()
+        val existingByUrl = existingItems
+            .mapNotNull { item -> normalizeBackupUrl(item.productUrl)?.let { it to item } }
+            .toMap(mutableMapOf())
+
+        val itemsArr = root.optJSONArray("items") ?: org.json.JSONArray()
+        for (i in 0 until itemsArr.length()) {
+            val o = itemsArr.optJSONObject(i) ?: continue
+            val title = o.optString("title").trim().take(180)
+            if (title.isBlank()) continue
+            val storeName = o.optString("storeName").trim().take(80).ifBlank { "Store" }
+            val productUrl = o.optString("productUrl").trim()
+            val currencyCode = o.optString("currencyCode").trim().uppercase().take(3).ifBlank { "USD" }
+            val categoryName = o.optString("categoryName").takeIf { it.isNotBlank() && it != "null" }?.trim()
+            val categoryId = categoryName?.let { categoryIdByName[it.lowercase()] }
+
+            val imageUrls = mutableListOf<String>()
+            o.optJSONArray("imageUrls")?.let { arr ->
+                for (j in 0 until arr.length()) arr.optString(j)?.takeIf { it.isNotBlank() }?.let(imageUrls::add)
+            }
+            if (imageUrls.isEmpty()) o.optString("imageUrl").takeIf { it.isNotBlank() && it != "null" }?.let { imageUrls += it }
+
+            val specs = mutableListOf<Pair<String, String>>()
+            o.optJSONArray("specs")?.let { arr ->
+                for (j in 0 until arr.length()) {
+                    val s = arr.optJSONObject(j) ?: continue
+                    val k = s.optString("k").trim()
+                    val v = s.optString("v").trim()
+                    if (k.isNotEmpty() && v.isNotEmpty()) specs += k to v
+                }
+            }
+
+            val history = mutableListOf<HistoricalPrice>()
+            o.optJSONArray("history")?.let { arr ->
+                for (j in 0 until arr.length()) {
+                    val h = arr.optJSONObject(j) ?: continue
+                    val price = h.optDouble("price", Double.NaN)
+                    val ts = h.optLong("recordedAt", 0L)
+                    if (!price.isFinite() || price <= 0.0 || ts <= 0L) continue
+                    val cur = h.optString("currencyCode").ifBlank { currencyCode }.uppercase()
+                    history += HistoricalPrice(price = price, currencyCode = cur, recordedAt = ts)
+                }
+            }
+
+            val urlKey = normalizeBackupUrl(productUrl)
+            val matched = urlKey?.let { existingByUrl[it] }
+            if (matched != null) {
+                // merge history into existing item; don't overwrite user-edited fields
+                val before = itemDao.history(matched.id).size
+                mergeImportedHistory(matched.id, history, matched.currencyCode, now, mutableListOf())
+                val added = (itemDao.history(matched.id).size - before).coerceAtLeast(0)
+                historyPointsAdded += added
+                if (added > 0 || history.isNotEmpty()) itemsMerged++
+                continue
+            }
+
+            val createdAt = o.optLong("createdAt", now).takeIf { it > 0L } ?: now
+            val updatedAt = o.optLong("updatedAt", createdAt).takeIf { it > 0L } ?: createdAt
+            val item = WishItem(
+                title = title,
+                storeName = storeName,
+                productUrl = productUrl,
+                imageUrl = imageUrls.firstOrNull(),
+                imageUrlsJson = WishItem.encodeImageUrls(imageUrls),
+                currencyCode = currencyCode,
+                currentPrice = optNullableDouble(o, "currentPrice"),
+                listPrice = optNullableDouble(o, "listPrice"),
+                targetPrice = optNullableDouble(o, "targetPrice"),
+                categoryId = categoryId,
+                notes = o.optString("notes").take(600),
+                description = o.optString("description").take(4000),
+                specsJson = WishItem.encodeSpecs(specs),
+                brand = o.optString("brand").takeIf { it.isNotBlank() && it != "null" }?.trim()?.take(80),
+                isArchived = o.optBoolean("isArchived", false),
+                inStock = if (o.has("inStock") && !o.isNull("inStock")) o.optBoolean("inStock") else null,
+                createdAt = createdAt,
+                updatedAt = updatedAt,
+                lastCheckedAt = o.optLong("lastCheckedAt", 0L).takeIf { it > 0L },
+                lastCheckFailed = o.optBoolean("lastCheckFailed", false)
+            )
+            val newId = itemDao.insert(item)
+            if (urlKey != null) existingByUrl[urlKey] = item.copy(id = newId)
+            itemsAdded++
+
+            val beforePts = itemDao.history(newId).size
+            mergeImportedHistory(newId, history, item.currencyCode, now, mutableListOf())
+            historyPointsAdded += (itemDao.history(newId).size - beforePts).coerceAtLeast(0)
+        }
+
+        if (categoriesAdded > 0 || itemsAdded > 0 || itemsMerged > 0 || historyPointsAdded > 0) {
+            notifyWidgetsChanged()
+        }
+        BackupImportResult(
+            categoriesAdded = categoriesAdded,
+            itemsAdded = itemsAdded,
+            itemsMerged = itemsMerged,
+            historyPointsAdded = historyPointsAdded
+        )
+    }
+
+    private fun normalizeBackupUrl(raw: String?): String? {
+        val t = raw?.trim()?.takeIf { it.isNotBlank() } ?: return null
+        return runCatching {
+            val u = java.net.URI(t)
+            val scheme = (u.scheme ?: "https").lowercase()
+            val host = (u.host ?: return@runCatching t.lowercase().trimEnd('/')).lowercase().removePrefix("www.")
+            val path = (u.path ?: "").trimEnd('/')
+            "$scheme://$host$path"
+        }.getOrElse { t.lowercase().trimEnd('/') }
+    }
+
+    private fun optNullableDouble(o: org.json.JSONObject, key: String): Double? {
+        if (!o.has(key) || o.isNull(key)) return null
+        val d = o.optDouble(key, Double.NaN)
+        return d.takeIf { it.isFinite() }
+    }
 }
