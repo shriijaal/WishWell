@@ -150,6 +150,19 @@ class PriceTrackingViewModel(private val container: AppContainer) : ViewModel() 
         }
     }
 
+    fun reorderSelected(direction: Int, orderedVisibleIds: List<Long>) {
+        val ids = selectedIds.value
+        if (ids.size != 1) {
+            postMessage("Select one item to reorder.")
+            return
+        }
+        val id = ids.first()
+        viewModelScope.launch {
+            val moved = runCatching { repo.reorderItems(id, direction, orderedVisibleIds) }.getOrDefault(false)
+            if (!moved) postMessage("Can't move that item further.")
+        }
+    }
+
     fun refreshAll() {
         if (refreshing.value) return
         viewModelScope.launch {

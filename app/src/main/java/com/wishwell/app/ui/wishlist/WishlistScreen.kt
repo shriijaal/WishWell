@@ -42,6 +42,8 @@ import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.DriveFileMove
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.LocalOffer
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SwapVert
@@ -462,8 +464,9 @@ fun WishlistScreen(
             SelectionBar(
                 count = state.selectedIds.size,
                 onCancel = viewModel::clearSelection,
-                onSelectAll = { viewModel.selectAll(state.items.map { it.item.id }) },
                 onMove = { showMoveDialog = true },
+                onReorderUp = { viewModel.reorderSelected(-1, state.items.map { it.item.id }) },
+                onReorderDown = { viewModel.reorderSelected(1, state.items.map { it.item.id }) },
                 onRemove = { showBulkDeleteConfirm = true },
                 floating = true
             )
@@ -530,8 +533,9 @@ fun WishlistScreen(
 private fun SelectionBar(
     count: Int,
     onCancel: () -> Unit,
-    onSelectAll: () -> Unit,
     onMove: () -> Unit,
+    onReorderUp: () -> Unit,
+    onReorderDown: () -> Unit,
     onRemove: () -> Unit,
     floating: Boolean = false
 ) {
@@ -539,59 +543,74 @@ private fun SelectionBar(
     val extra = LocalWishExtraColors.current
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(18.dp),
         color = if (floating) colors.surface else extra.sunken.copy(alpha = 0.55f),
         tonalElevation = if (floating) 6.dp else 0.dp,
         shadowElevation = if (floating) 10.dp else 0.dp,
-        border = androidx.compose.foundation.BorderStroke(1.dp, if (floating) extra.hairline.copy(alpha = 0.9f) else extra.hairline)
+        border = BorderStroke(1.dp, if (floating) extra.hairline.copy(alpha = 0.9f) else extra.hairline)
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onCancel, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Rounded.Close, contentDescription = "Cancel selection", tint = extra.muted, modifier = Modifier.size(18.dp))
-                }
-                Spacer(Modifier.width(4.dp))
-                Text(
-                    text = "$count selected",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = colors.onSurface,
-                    modifier = Modifier.weight(1f)
-                )
-                TextButton(onClick = onSelectAll) { Text("Select all", color = colors.primary) }
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            IconButton(onClick = onCancel, modifier = Modifier.size(34.dp)) {
+                Icon(Icons.Rounded.Close, contentDescription = "Cancel selection", tint = extra.muted, modifier = Modifier.size(18.dp))
             }
-            Spacer(Modifier.height(6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Surface(
-                    onClick = onMove,
-                    shape = RoundedCornerShape(12.dp),
-                    color = colors.primary.copy(alpha = 0.12f),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Rounded.DriveFileMove, contentDescription = null, tint = colors.primary, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Move", style = MaterialTheme.typography.labelLarge, color = colors.primary)
+            Text(
+                text = "$count",
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                color = colors.onSurface
+            )
+
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = extra.sunken.copy(alpha = 0.55f),
+                border = BorderStroke(1.dp, extra.hairline)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onReorderUp, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = "Move up", tint = colors.onSurface, modifier = Modifier.size(18.dp))
+                    }
+                    Text(
+                        text = "Reorder",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = extra.muted
+                    )
+                    IconButton(onClick = onReorderDown, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "Move down", tint = colors.onSurface, modifier = Modifier.size(18.dp))
                     }
                 }
-                Surface(
-                    onClick = onRemove,
-                    shape = RoundedCornerShape(12.dp),
-                    color = extra.terracotta.copy(alpha = 0.14f),
-                    modifier = Modifier.weight(1f)
+            }
+
+            Spacer(Modifier.weight(1f))
+
+            Surface(
+                onClick = onMove,
+                shape = RoundedCornerShape(12.dp),
+                color = colors.primary.copy(alpha = 0.12f)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Rounded.DeleteOutline, contentDescription = null, tint = extra.terracotta, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Remove", style = MaterialTheme.typography.labelLarge, color = extra.terracotta)
-                    }
+                    Icon(Icons.Rounded.DriveFileMove, contentDescription = null, tint = colors.primary, modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Move", style = MaterialTheme.typography.labelLarge, color = colors.primary)
+                }
+            }
+            Surface(
+                onClick = onRemove,
+                shape = RoundedCornerShape(12.dp),
+                color = extra.terracotta.copy(alpha = 0.14f)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Rounded.DeleteOutline, contentDescription = null, tint = extra.terracotta, modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Remove", style = MaterialTheme.typography.labelLarge, color = extra.terracotta)
                 }
             }
         }

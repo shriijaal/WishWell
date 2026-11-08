@@ -178,6 +178,22 @@ class WishlistRepository(
         notifyWidgetsChanged()
     }
 
+    suspend fun reorderItems(itemId: Long, direction: Int, orderedVisibleIds: List<Long>): Boolean =
+        withContext(Dispatchers.IO) {
+            val index = orderedVisibleIds.indexOf(itemId)
+            if (index < 0) return@withContext false
+            val targetIndex = index + direction
+            if (targetIndex !in orderedVisibleIds.indices) return@withContext false
+            val otherId = orderedVisibleIds[targetIndex]
+            val item = itemDao.getById(itemId) ?: return@withContext false
+            val other = itemDao.getById(otherId) ?: return@withContext false
+            val now = System.currentTimeMillis()
+            itemDao.update(item.copy(createdAt = other.createdAt, updatedAt = now))
+            itemDao.update(other.copy(createdAt = item.createdAt, updatedAt = now))
+            notifyWidgetsChanged()
+            true
+        }
+
     suspend fun updateItem(
         id: Long,
         title: String,
