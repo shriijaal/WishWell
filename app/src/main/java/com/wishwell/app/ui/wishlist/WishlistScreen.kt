@@ -1,4 +1,4 @@
-package com.wishwell.app.ui.wishlist
+﻿package com.wishwell.app.ui.wishlist
 
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -30,6 +30,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -39,6 +40,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.material.icons.rounded.DriveFileMove
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.GridView
@@ -72,6 +74,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -82,8 +86,11 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.zIndex
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -101,6 +108,7 @@ import com.wishwell.app.ui.components.LoadingSpinner
 import com.wishwell.app.ui.components.NoticeBar
 import com.wishwell.app.ui.components.ConfirmDialog
 import com.wishwell.app.ui.components.ProductThumb
+import com.wishwell.app.ui.components.ReorderItemsSheet
 import com.wishwell.app.ui.components.SectionLabel
 import com.wishwell.app.ui.components.SwipeableWishCard
 import com.wishwell.app.ui.components.WishCard
@@ -139,6 +147,7 @@ fun WishlistScreen(
     var pendingDeleteId by remember { mutableStateOf<Long?>(null) }
     var showBulkDeleteConfirm by remember { mutableStateOf(false) }
     var showMoveDialog by remember { mutableStateOf(false) }
+    var showReorderSheet by remember { mutableStateOf(false) }
     var revealedItemId by remember { mutableStateOf<Long?>(null) }
     LaunchedEffect(state.selectionMode) { if (state.selectionMode) revealedItemId = null }
     LaunchedEffect(listState.isScrollInProgress) { if (listState.isScrollInProgress) revealedItemId = null }
@@ -217,7 +226,7 @@ fun WishlistScreen(
                     }
                     Text(
                         text = if (filterNote.isEmpty()) "${state.items.size} shown"
-                        else "${state.items.size} shown · ${filterNote.joinToString(", ")}",
+                        else "${state.items.size} shown Â· ${filterNote.joinToString(", ")}",
                         style = MaterialTheme.typography.labelSmall,
                         color = extra.muted,
                         modifier = Modifier.weight(1f)
@@ -464,9 +473,9 @@ fun WishlistScreen(
             SelectionBar(
                 count = state.selectedIds.size,
                 onCancel = viewModel::clearSelection,
+                onSelectAll = { viewModel.selectAll(state.items.map { it.item.id }) },
+                onReorder = { showReorderSheet = true },
                 onMove = { showMoveDialog = true },
-                onReorderUp = { viewModel.reorderSelected(-1, state.items.map { it.item.id }) },
-                onReorderDown = { viewModel.reorderSelected(1, state.items.map { it.item.id }) },
                 onRemove = { showBulkDeleteConfirm = true },
                 floating = true
             )
@@ -526,6 +535,17 @@ fun WishlistScreen(
                 dismissButton = { TextButton(onClick = { showMoveDialog = false }) { Text("Cancel") } }
             )
         }
+        if (showReorderSheet && state.selectionMode) {
+            ReorderItemsSheet(
+                items = state.items,
+                onSave = { orderedIds ->
+                    viewModel.persistVisibleOrder(orderedIds)
+                    showReorderSheet = false
+                    viewModel.clearSelection()
+                },
+                onDismiss = { showReorderSheet = false }
+            )
+        }
     }
 }
 
@@ -533,9 +553,9 @@ fun WishlistScreen(
 private fun SelectionBar(
     count: Int,
     onCancel: () -> Unit,
+    onSelectAll: () -> Unit,
+    onReorder: () -> Unit,
     onMove: () -> Unit,
-    onReorderUp: () -> Unit,
-    onReorderDown: () -> Unit,
     onRemove: () -> Unit,
     floating: Boolean = false
 ) {
@@ -550,67 +570,42 @@ private fun SelectionBar(
         border = BorderStroke(1.dp, if (floating) extra.hairline.copy(alpha = 0.9f) else extra.hairline)
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+            modifier = Modifier
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 6.dp, vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(5.dp)
         ) {
-            IconButton(onClick = onCancel, modifier = Modifier.size(34.dp)) {
+            IconButton(onClick = onCancel, modifier = Modifier.size(32.dp)) {
                 Icon(Icons.Rounded.Close, contentDescription = "Cancel selection", tint = extra.muted, modifier = Modifier.size(18.dp))
             }
             Text(
                 text = "$count",
-                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
                 color = colors.onSurface
             )
-
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = extra.sunken.copy(alpha = 0.55f),
-                border = BorderStroke(1.dp, extra.hairline)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onReorderUp, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = "Move up", tint = colors.onSurface, modifier = Modifier.size(18.dp))
-                    }
-                    Text(
-                        text = "Reorder",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = extra.muted
-                    )
-                    IconButton(onClick = onReorderDown, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "Move down", tint = colors.onSurface, modifier = Modifier.size(18.dp))
-                    }
+            TextButton(onClick = onSelectAll, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                Text("Select all", style = MaterialTheme.typography.labelMedium, color = colors.primary)
+            }
+            Surface(onClick = onReorder, shape = RoundedCornerShape(10.dp), color = extra.sunken.copy(alpha = 0.55f), border = BorderStroke(1.dp, extra.hairline)) {
+                Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.SwapVert, contentDescription = null, tint = colors.onSurface, modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Reorder", style = MaterialTheme.typography.labelMedium, color = colors.onSurface)
                 }
             }
-
-            Spacer(Modifier.weight(1f))
-
-            Surface(
-                onClick = onMove,
-                shape = RoundedCornerShape(12.dp),
-                color = colors.primary.copy(alpha = 0.12f)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+            Surface(onClick = onMove, shape = RoundedCornerShape(10.dp), color = colors.primary.copy(alpha = 0.12f)) {
+                Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Rounded.DriveFileMove, contentDescription = null, tint = colors.primary, modifier = Modifier.size(15.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Move", style = MaterialTheme.typography.labelLarge, color = colors.primary)
+                    Spacer(Modifier.width(3.dp))
+                    Text("Move", style = MaterialTheme.typography.labelMedium, color = colors.primary)
                 }
             }
-            Surface(
-                onClick = onRemove,
-                shape = RoundedCornerShape(12.dp),
-                color = extra.terracotta.copy(alpha = 0.14f)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+            Surface(onClick = onRemove, shape = RoundedCornerShape(10.dp), color = extra.terracotta.copy(alpha = 0.14f)) {
+                Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Rounded.DeleteOutline, contentDescription = null, tint = extra.terracotta, modifier = Modifier.size(15.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Remove", style = MaterialTheme.typography.labelLarge, color = extra.terracotta)
+                    Spacer(Modifier.width(3.dp))
+                    Text("Remove", style = MaterialTheme.typography.labelMedium, color = extra.terracotta)
                 }
             }
         }
@@ -727,13 +722,13 @@ private fun buildWishlistNotifications(items: List<ItemWithStats>): List<Wishlis
             target != null && price != null && price <= target + 0.005 -> out += WishlistNotification(
                 id = item.item.id,
                 title = item.item.title,
-                detail = "Target reached · ${formatMoney(price, currency)}",
+                detail = "Target reached Â· ${formatMoney(price, currency)}",
                 tone = com.wishwell.app.ui.components.BadgeTone.GOOD
             )
             item.isAtLowest -> out += WishlistNotification(
                 id = item.item.id,
                 title = item.item.title,
-                detail = "All-time low · ${formatMoney(price ?: 0.0, currency)}",
+                detail = "All-time low Â· ${formatMoney(price ?: 0.0, currency)}",
                 tone = com.wishwell.app.ui.components.BadgeTone.LOW
             )
             item.isOnSale || (item.discountPercent ?: 0) >= 1 -> out += WishlistNotification(
@@ -742,7 +737,7 @@ private fun buildWishlistNotifications(items: List<ItemWithStats>): List<Wishlis
                 detail = buildString {
                     item.discountPercent?.let { append("-$it%") }
                     if (price != null) {
-                        if (isNotEmpty()) append(" · ")
+                        if (isNotEmpty()) append(" Â· ")
                         append(formatMoney(price, currency))
                     }
                     if (isEmpty()) append("On sale")
@@ -1292,7 +1287,7 @@ private fun FilterBar(
         }
 
         WishPill(
-            text = if (state.summary.onSaleCount > 0) "On sale · ${state.summary.onSaleCount}" else "On sale",
+            text = if (state.summary.onSaleCount > 0) "On sale Â· ${state.summary.onSaleCount}" else "On sale",
             selected = onSale,
             onClick = { onAttention(if (onSale) AttentionFilter.ALL else AttentionFilter.ON_SALE) },
             leadingIcon = Icons.Rounded.LocalOffer

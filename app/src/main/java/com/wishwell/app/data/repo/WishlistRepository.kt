@@ -194,6 +194,20 @@ class WishlistRepository(
             true
         }
 
+    suspend fun persistItemOrder(orderedIds: List<Long>) = withContext(Dispatchers.IO) {
+        if (orderedIds.isEmpty()) return@withContext
+        val base = System.currentTimeMillis()
+        val step = 1_000L
+        orderedIds.forEachIndexed { index, id ->
+            val item = itemDao.getById(id) ?: return@forEachIndexed
+            val createdAt = base - (index.toLong() * step)
+            if (item.createdAt != createdAt) {
+                itemDao.update(item.copy(createdAt = createdAt, updatedAt = base))
+            }
+        }
+        notifyWidgetsChanged()
+    }
+
     suspend fun updateItem(
         id: Long,
         title: String,

@@ -163,6 +163,14 @@ class PriceTrackingViewModel(private val container: AppContainer) : ViewModel() 
         }
     }
 
+    fun persistVisibleOrder(orderedIds: List<Long>) {
+        viewModelScope.launch {
+            runCatching { repo.persistItemOrder(orderedIds) }
+                .onSuccess { postMessage("Order saved.") }
+                .onFailure { postMessage(it.message ?: "Couldn't save order.") }
+        }
+    }
+
     fun refreshAll() {
         if (refreshing.value) return
         viewModelScope.launch {

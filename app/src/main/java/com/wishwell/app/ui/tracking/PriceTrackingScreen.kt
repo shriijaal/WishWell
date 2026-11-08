@@ -16,7 +16,9 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
@@ -24,6 +26,7 @@ import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.DriveFileMove
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -54,6 +57,7 @@ import com.wishwell.app.ui.components.ConfirmDialog
 import com.wishwell.app.ui.components.EmptyState
 import com.wishwell.app.ui.components.LoadingSpinner
 import com.wishwell.app.ui.components.NoticeBar
+import com.wishwell.app.ui.components.ReorderItemsSheet
 import com.wishwell.app.ui.components.SectionLabel
 import com.wishwell.app.ui.components.StatTile
 import com.wishwell.app.ui.components.SwipeableWishCard
@@ -88,6 +92,7 @@ fun PriceTrackingScreen(
     var pendingDeleteId by remember { mutableStateOf<Long?>(null) }
     var showBulkDeleteConfirm by remember { mutableStateOf(false) }
     var showMoveDialog by remember { mutableStateOf(false) }
+    var showReorderSheet by remember { mutableStateOf(false) }
     var revealedItemId by remember { mutableStateOf<Long?>(null) }
     val listState = rememberLazyListState()
     LaunchedEffect(state.selectionMode) { if (state.selectionMode) revealedItemId = null }
@@ -386,9 +391,9 @@ fun PriceTrackingScreen(
             TrackingSelectionBar(
                 count = state.selectedIds.size,
                 onCancel = viewModel::clearSelection,
+                onSelectAll = { viewModel.selectAll(state.allItems.map { it.item.id }) },
+                onReorder = { showReorderSheet = true },
                 onMove = { showMoveDialog = true },
-                onReorderUp = { viewModel.reorderSelected(-1, state.allItems.map { it.item.id }) },
-                onReorderDown = { viewModel.reorderSelected(1, state.allItems.map { it.item.id }) },
                 onRemove = { showBulkDeleteConfirm = true },
                 floating = true
             )
@@ -448,6 +453,17 @@ fun PriceTrackingScreen(
                 dismissButton = { TextButton(onClick = { showMoveDialog = false }) { Text("Cancel") } }
             )
         }
+        if (showReorderSheet && state.selectionMode) {
+            ReorderItemsSheet(
+                items = state.allItems,
+                onSave = { orderedIds ->
+                    viewModel.persistVisibleOrder(orderedIds)
+                    showReorderSheet = false
+                    viewModel.clearSelection()
+                },
+                onDismiss = { showReorderSheet = false }
+            )
+        }
     }
 }
 
@@ -455,9 +471,9 @@ fun PriceTrackingScreen(
 private fun TrackingSelectionBar(
     count: Int,
     onCancel: () -> Unit,
+    onSelectAll: () -> Unit,
+    onReorder: () -> Unit,
     onMove: () -> Unit,
-    onReorderUp: () -> Unit,
-    onReorderDown: () -> Unit,
     onRemove: () -> Unit,
     floating: Boolean = false
 ) {
@@ -472,41 +488,38 @@ private fun TrackingSelectionBar(
         border = BorderStroke(1.dp, if (floating) extra.hairline.copy(alpha = 0.9f) else extra.hairline)
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+            modifier = Modifier
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 6.dp, vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(5.dp)
         ) {
-            IconButton(onClick = onCancel, modifier = Modifier.size(34.dp)) {
+            IconButton(onClick = onCancel, modifier = Modifier.size(32.dp)) {
                 Icon(Icons.Rounded.Close, contentDescription = "Cancel selection", tint = extra.muted, modifier = Modifier.size(18.dp))
             }
-            Text("$count", style = MaterialTheme.typography.titleSmall.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = colors.onSurface)
-
-            Surface(shape = RoundedCornerShape(12.dp), color = extra.sunken.copy(alpha = 0.55f), border = BorderStroke(1.dp, extra.hairline)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onReorderUp, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = "Move up", tint = colors.onSurface, modifier = Modifier.size(18.dp))
-                    }
-                    Text("Reorder", style = MaterialTheme.typography.labelMedium, color = extra.muted)
-                    IconButton(onClick = onReorderDown, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "Move down", tint = colors.onSurface, modifier = Modifier.size(18.dp))
-                    }
+            Text("$count", style = MaterialTheme.typography.labelLarge.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = colors.onSurface)
+            TextButton(onClick = onSelectAll, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                Text("Select all", style = MaterialTheme.typography.labelMedium, color = colors.primary)
+            }
+            Surface(onClick = onReorder, shape = RoundedCornerShape(10.dp), color = extra.sunken.copy(alpha = 0.55f), border = BorderStroke(1.dp, extra.hairline)) {
+                Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.SwapVert, contentDescription = null, tint = colors.onSurface, modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Reorder", style = MaterialTheme.typography.labelMedium, color = colors.onSurface)
                 }
             }
-
-            Spacer(Modifier.weight(1f))
-
-            Surface(onClick = onMove, shape = RoundedCornerShape(12.dp), color = colors.primary.copy(alpha = 0.12f)) {
-                Row(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Surface(onClick = onMove, shape = RoundedCornerShape(10.dp), color = colors.primary.copy(alpha = 0.12f)) {
+                Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Rounded.DriveFileMove, contentDescription = null, tint = colors.primary, modifier = Modifier.size(15.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Move", style = MaterialTheme.typography.labelLarge, color = colors.primary)
+                    Spacer(Modifier.width(3.dp))
+                    Text("Move", style = MaterialTheme.typography.labelMedium, color = colors.primary)
                 }
             }
-            Surface(onClick = onRemove, shape = RoundedCornerShape(12.dp), color = extra.terracotta.copy(alpha = 0.14f)) {
-                Row(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Surface(onClick = onRemove, shape = RoundedCornerShape(10.dp), color = extra.terracotta.copy(alpha = 0.14f)) {
+                Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Rounded.DeleteOutline, contentDescription = null, tint = extra.terracotta, modifier = Modifier.size(15.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Remove", style = MaterialTheme.typography.labelLarge, color = extra.terracotta)
+                    Spacer(Modifier.width(3.dp))
+                    Text("Remove", style = MaterialTheme.typography.labelMedium, color = extra.terracotta)
                 }
             }
         }
