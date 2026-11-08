@@ -102,6 +102,7 @@ import com.wishwell.app.ui.components.LoadingSpinner
 import com.wishwell.app.ui.components.PriceHistoryChart
 import com.wishwell.app.ui.components.ProductImageCarousel
 import com.wishwell.app.ui.components.ProductThumb
+import com.wishwell.app.ui.components.RollingPriceText
 import com.wishwell.app.ui.components.SectionLabel
 import com.wishwell.app.ui.components.StatTile
 import com.wishwell.app.ui.components.WishDialog
@@ -407,10 +408,12 @@ private fun ItemDetailContent(
 
             Spacer(Modifier.height(14.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
+                RollingPriceText(
                     text = formatMoney(detail.price, currency),
                     style = MaterialTheme.typography.displayLarge,
-                    color = colors.onBackground
+                    color = colors.onBackground,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 if (detail.discountPercent != null) {
                     Spacer(Modifier.width(10.dp))
@@ -436,18 +439,22 @@ private fun ItemDetailContent(
                     val listPrice = item.listPrice
                     val currentPrice = detail.price
                     if (listPrice != null && currentPrice != null && listPrice > currentPrice + 0.01) {
-                        Text(
+                        RollingPriceText(
                             text = formatMoney(listPrice, currency),
                             style = MaterialTheme.typography.bodyMedium,
                             color = extra.muted,
-                            textDecoration = TextDecoration.LineThrough
+                            textDecoration = TextDecoration.LineThrough,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Spacer(Modifier.width(10.dp))
                     }
-                    Text(
+                    RollingPriceText(
                         text = "Lowest ${formatMoney(detail.lowest, currency)}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = extra.muted
+                        color = extra.muted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
                 if (item.inStock != null) {

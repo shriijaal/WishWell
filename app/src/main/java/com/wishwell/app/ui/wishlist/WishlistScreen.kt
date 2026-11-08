@@ -113,6 +113,7 @@ import com.wishwell.app.ui.components.NoticeBar
 import com.wishwell.app.ui.components.ConfirmDialog
 import com.wishwell.app.ui.components.ProductThumb
 import com.wishwell.app.ui.components.ReorderItemsSheet
+import com.wishwell.app.ui.components.RollingPriceText
 import com.wishwell.app.ui.components.SectionLabel
 import com.wishwell.app.ui.components.SwipeableWishCard
 import com.wishwell.app.ui.components.WishCard
@@ -997,7 +998,7 @@ private fun DashboardValueCard(summary: WishlistSummary) {
                 color = subInk
             )
             Spacer(Modifier.height(4.dp))
-            Text(
+            RollingPriceText(
                 text = if (hasValue) formatMoney(summary.trackedValue, summary.currencyCode)
                 else "${summary.itemCount}",
                 style = MaterialTheme.typography.displayMedium,
@@ -1016,11 +1017,12 @@ private fun DashboardValueCard(summary: WishlistSummary) {
                         color = colors.primary.copy(alpha = if (extra.isDark) 0.22f else 0.14f),
                         border = BorderStroke(1.dp, colors.primary.copy(alpha = if (extra.isDark) 0.30f else 0.18f))
                     ) {
-                        Text(
+                        RollingPriceText(
                             text = "${formatMoney(savings, summary.currencyCode)} saved",
                             style = MaterialTheme.typography.labelMedium,
                             color = if (extra.isDark) colors.primary else colors.onSurface,
                             maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                         )
                     }
@@ -1423,19 +1425,21 @@ private fun WishlistGridCard(
                 overflow = TextOverflow.Ellipsis
             )
             Spacer(Modifier.height(4.dp))
-            Text(
+            RollingPriceText(
                 text = formatMoney(price, item.item.currencyCode),
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                 color = colors.onSurface,
-                maxLines = 1
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             if (listPrice != null && price != null && listPrice > price + 0.01) {
-                Text(
+                RollingPriceText(
                     text = formatMoney(listPrice, item.item.currencyCode),
                     style = MaterialTheme.typography.labelSmall,
                     color = extra.muted,
                     textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough,
-                    maxLines = 1
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }

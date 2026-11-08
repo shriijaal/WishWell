@@ -1,9 +1,15 @@
 package com.wishwell.app.ui.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -48,6 +54,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -462,20 +469,22 @@ fun WishCard(
                     )
                     Spacer(Modifier.height(5.dp))
                     Row(verticalAlignment = Alignment.Bottom) {
-                        Text(
+                        RollingPriceText(
                             text = formatMoney(price, item.item.currencyCode),
                             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
                             color = colors.onSurface,
-                            maxLines = 1
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         if (listPrice != null && price != null && listPrice > price + 0.01) {
                             Spacer(Modifier.width(6.dp))
-                            Text(
+                            RollingPriceText(
                                 text = formatMoney(listPrice, item.item.currencyCode),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = extra.muted,
                                 textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough,
-                                maxLines = 1
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
@@ -635,6 +644,40 @@ fun SwipeableWishCard(
 }
 
 @Composable
+fun RollingPriceText(
+    text: String,
+    modifier: Modifier = Modifier,
+    style: androidx.compose.ui.text.TextStyle = LocalTextStyle.current,
+    color: Color = Color.Unspecified,
+    maxLines: Int = Int.MAX_VALUE,
+    overflow: TextOverflow = TextOverflow.Clip,
+    textAlign: TextAlign? = null,
+    textDecoration: androidx.compose.ui.text.style.TextDecoration? = null
+) {
+    AnimatedContent(
+        targetState = text,
+        modifier = modifier,
+        transitionSpec = {
+            (slideInVertically(animationSpec = spring(dampingRatio = 0.9f, stiffness = 380f)) { it / 2 } +
+                fadeIn(animationSpec = spring(stiffness = 380f))) togetherWith
+                (slideOutVertically(animationSpec = spring(dampingRatio = 0.9f, stiffness = 380f)) { -it / 2 } +
+                    fadeOut(animationSpec = spring(stiffness = 380f)))
+        },
+        label = "rollingPrice"
+    ) { target ->
+        Text(
+            text = target,
+            style = style,
+            color = color,
+            maxLines = maxLines,
+            overflow = overflow,
+            textAlign = textAlign,
+            textDecoration = textDecoration
+        )
+    }
+}
+
+@Composable
 fun StatTile(
     label: String,
     value: String,
@@ -654,10 +697,12 @@ fun StatTile(
                 color = extra.muted
             )
             Spacer(Modifier.height(6.dp))
-            Text(
+            RollingPriceText(
                 text = value,
                 style = MaterialTheme.typography.titleLarge.copy(fontFeatureSettings = "tnum"),
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             if (caption != null) {
                 Spacer(Modifier.height(2.dp))
