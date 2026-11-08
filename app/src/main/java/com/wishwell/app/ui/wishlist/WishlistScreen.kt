@@ -26,6 +26,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -49,6 +50,7 @@ import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.LocalOffer
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SwapVert
+import androidx.compose.material.icons.rounded.ViewCarousel
 import androidx.compose.material.icons.automirrored.rounded.ViewList
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.NotificationsNone
@@ -139,7 +141,7 @@ fun WishlistScreen(
     )
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val extra = LocalWishExtraColors.current
-    var viewMode by remember { mutableStateOf("list") } // list, grid
+    var viewMode by remember { mutableStateOf("list") } // list, grid, carousel
     val listState = rememberLazyListState()
     val pullState = rememberPullToRefreshState()
     LaunchedEffect(state.selectionMode) { onSelectionModeChanged(state.selectionMode) }
@@ -260,6 +262,16 @@ fun WishlistScreen(
                                 .clickable { viewMode = "grid" }
                                 .padding(4.dp)
                         )
+                        Icon(
+                            imageVector = Icons.Rounded.ViewCarousel,
+                            contentDescription = "Carousel view",
+                            tint = if (viewMode == "carousel") MaterialTheme.colorScheme.primary else extra.muted,
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .clickable { viewMode = "carousel" }
+                                .padding(4.dp)
+                        )
                     }
                 }
             }
@@ -348,6 +360,60 @@ fun WishlistScreen(
                     gridRows(
                         items = state.items,
                         keyPrefix = "grid",
+                        selectedIds = state.selectedIds,
+                        selectionMode = state.selectionMode,
+                        onOpenItem = onOpenItem,
+                        onToggleSelection = viewModel::toggleSelection,
+                        onEnterSelection = viewModel::enterSelection
+                    )
+                }
+            }
+
+            viewMode == "carousel" -> {
+                if (showAttentionSection) {
+                    val attention = state.items.filter(::needsAttention)
+                    val rest = state.items.filter { !needsAttention(it) }
+                    item(key = "section-attention") {
+                        SectionLabel(
+                            text = "Needs attention",
+                            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 4.dp),
+                            trailing = {
+                                Text(
+                                    text = "${attention.size}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = extra.muted
+                                )
+                            }
+                        )
+                    }
+                    carouselRows(
+                        items = attention,
+                        keyPrefix = "attn",
+                        selectedIds = state.selectedIds,
+                        selectionMode = state.selectionMode,
+                        onOpenItem = onOpenItem,
+                        onToggleSelection = viewModel::toggleSelection,
+                        onEnterSelection = viewModel::enterSelection
+                    )
+                    item(key = "section-library") {
+                        SectionLabel(
+                            text = "Library",
+                            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 4.dp)
+                        )
+                    }
+                    carouselRows(
+                        items = rest,
+                        keyPrefix = "lib",
+                        selectedIds = state.selectedIds,
+                        selectionMode = state.selectionMode,
+                        onOpenItem = onOpenItem,
+                        onToggleSelection = viewModel::toggleSelection,
+                        onEnterSelection = viewModel::enterSelection
+                    )
+                } else {
+                    carouselRows(
+                        items = state.items,
+                        keyPrefix = "carousel",
                         selectedIds = state.selectedIds,
                         selectionMode = state.selectionMode,
                         onOpenItem = onOpenItem,
@@ -1248,6 +1314,38 @@ private fun LazyListScope.gridRows(
                 )
             }
             if (row.size == 1) Spacer(Modifier.weight(1f))
+        }
+    }
+}
+
+private fun LazyListScope.carouselRows(
+    items: List<ItemWithStats>,
+    keyPrefix: String,
+    selectedIds: Set<Long>,
+    selectionMode: Boolean,
+    onOpenItem: (Long) -> Unit,
+    onToggleSelection: (Long) -> Unit,
+    onEnterSelection: (Long) -> Unit
+) {
+    if (items.isEmpty()) return
+    item(key = "$keyPrefix-carousel") {
+        LazyRow(
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            items(items, key = { "$keyPrefix-${it.item.id}" }) { item ->
+                val id = item.item.id
+                val selected = id in selectedIds
+                WishlistGridCard(
+                    item = item,
+                    onClick = { if (selectionMode) onToggleSelection(id) else onOpenItem(id) },
+                    selected = selected,
+                    selectionMode = selectionMode,
+                    onLongClick = { if (!selectionMode) onEnterSelection(id) else onToggleSelection(id) },
+                    modifier = Modifier.width(172.dp)
+                )
+            }
         }
     }
 }
