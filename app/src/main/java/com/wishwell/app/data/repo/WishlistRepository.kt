@@ -781,6 +781,13 @@ class WishlistRepository(
         val historyPointsAdded: Int = 0
     )
 
+    data class BackupFileInfo(
+        val path: String,
+        val name: String,
+        val size: Long,
+        val lastModified: Long
+    )
+
     suspend fun exportBackupJson(): String = withContext(Dispatchers.IO) {
         val categories = categoryDao.getAll()
         val items = itemDao.getAllItemsRaw()
@@ -1086,6 +1093,14 @@ class WishlistRepository(
         prefs.recordBackupFile(uri.toString())
         rotateBackups()
         result
+    }
+
+    /** Imports a backup file from an absolute filesystem path (e.g. app internal storage). */
+    suspend fun importFromFile(path: String): BackupImportResult = withContext(Dispatchers.IO) {
+        val file = File(path)
+        if (!file.exists()) error("Backup file not found: $path")
+        val text = file.bufferedReader().use { it.readText() }
+        importBackupJson(text)
     }
 
     /** Lists all backup files currently known (existing files only). */

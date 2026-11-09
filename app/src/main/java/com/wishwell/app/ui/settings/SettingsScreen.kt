@@ -98,6 +98,7 @@ fun SettingsScreen(container: AppContainer) {
     LaunchedEffect(Unit) {
         viewModel.loadStorageUsage()
         viewModel.loadDiskVolumes()
+        viewModel.loadBackupFiles()
     }
 
     val exportLauncher = rememberLauncherForActivityResult(
@@ -731,6 +732,51 @@ fun SettingsScreen(container: AppContainer) {
                     style = MaterialTheme.typography.labelSmall,
                     color = extra.muted
                 )
+            }
+
+            if (state.backupFiles.isNotEmpty()) {
+                Spacer(Modifier.height(16.dp))
+                SectionLabel("Available backups")
+                Spacer(Modifier.height(10.dp))
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    state.backupFiles.forEach { file ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = file.name,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = colors.onSurface,
+                                    maxLines = 1
+                                )
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                    text = "${viewModel.formatBytes(file.size)} · ${formatDateWithYear(file.lastModified)}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = extra.muted,
+                                    maxLines = 1
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            OutlinedButton(
+                                onClick = { viewModel.restoreFromBackupFile(file.path) },
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, extra.hairline)
+                            ) {
+                                Text("Restore", color = colors.onSurface)
+                            }
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        androidx.compose.material3.HorizontalDivider(
+                            color = extra.hairline.copy(alpha = 0.5f),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
             }
         }
 

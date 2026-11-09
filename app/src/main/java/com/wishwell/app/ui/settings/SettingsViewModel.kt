@@ -33,6 +33,7 @@ data class SettingsUiState(
     val autoBackupFrequency: String = "off",
     val lastBackupAt: Long? = null,
     val backupFileCount: Int = 0,
+    val backupFiles: List<WishlistRepository.BackupFileInfo> = emptyList(),
     // Theme state
     val uiTheme: String = "system"
 )
@@ -66,6 +67,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     private val message = MutableStateFlow<String?>(null)
     private val storageUsage = MutableStateFlow<WishlistRepository.StorageUsage?>(null)
     private val diskVolumes = MutableStateFlow<List<WishlistRepository.DiskVolume>>(emptyList())
+    private val backupFiles = MutableStateFlow<List<WishlistRepository.BackupFileInfo>>(emptyList())
 
     private val prefsCore1 = combine(
         prefs.refreshIntervalHours,
@@ -135,7 +137,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             autoBackupFrequency = p.autoBackupFrequency,
             lastBackupAt = lastBackup,
             backupFileCount = backupPaths.size,
-            uiTheme = p.uiTheme
+            uiTheme = p.uiTheme,
+            backupFiles = backupFiles.value
         )
     }.stateIn(
         scope = viewModelScope,
@@ -233,6 +236,58 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             diskVolumes.value = volumes
         }
     }
+
+    fun loadBackupFiles() {
+        viewModelScope.launch {
+            val files = withContext(Dispatchers.IO) {
+                repo.listBackupFiles()
+            }
+            val info = files.map { f ->
+                WishlistRepository.BackupFileInfo(
+                    path = f.absolutePath,
+                    name = f.name,
+                    size = f.length(),
+                    lastModified = f.lastModified()
+                )
+            }
+            backupFiles.value = info
+        }
+    }
+
+    fun restoreFromBackupFile(path: String) {
+        if (backupBusy.value) return
+        viewModelScope.launch {
+            backupBusy.value = true
+            val result = runCatching {
+                repo.importFromFile(path)
+            }
+            backupBusy.value = false
+            loadBackupFiles()
+            reportMessage(
+                result.fold(
+                    onSuccess = { r ->
+                        when {
+                            r.itemsAdded == 0 && r.itemsMerged == 0 && r.categoriesAdded == 0 && r.historyPointsAdded == 0 ->
+                                "Nothing new to import."
+                            else -> buildString {
+                                append("Import complete: ")
+                                val parts = mutableListOf<String>()
+                                if (r.itemsAdded > 0) parts += "${r.itemsAdded} item${if (r.itemsAdded == 1) "" else "s"} added"
+                                if (r.itemsMerged > 0) parts += "${r.itemsMerged} merged"
+                                if (r.categoriesAdded > 0) parts += "${r.categoriesAdded} categor${if (r.categoriesAdded == 1) "y" else "ies"} added"
+                                if (r.historyPointsAdded > 0) parts += "${r.historyPointsAdded} price point${if (r.historyPointsAdded == 1) "" else "s"}"
+                                append(parts.joinToString(", ").ifBlank { "done" })
+                                append(".")
+                            }
+                        }
+                    },
+                    onFailure = { it.message ?: "Couldn't restore backup." }
+                )
+            )
+        }
+    }
+
+    private val backupBusy = MutableStateFlow(false)
 
     // ---------------------------------------------------------------- existing
 
