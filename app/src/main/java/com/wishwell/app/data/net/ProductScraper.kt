@@ -25,46 +25,250 @@ class ProductScraper(
 ) {
 
     suspend fun scrape(rawUrl: String): ScrapeResult = withContext(Dispatchers.IO) {
-        val url = normalizeUrl(rawUrl)
+        val initialUrl = normalizeUrl(rawUrl)
             ?: return@withContext ScrapeResult.Failure("That doesn't look like a product link.")
 
-        val request = Request.Builder()
-            .url(url)
-            .header("User-Agent", USER_AGENT)
-            .header(
-                "Accept",
-                "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
-            )
-            .header("Accept-Language", "en-US,en;q=0.9")
-            .header("Cache-Control", "no-cache")
-            .build()
-
         try {
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    return@use ScrapeResult.Failure(
-                        "The store returned HTTP ${response.code}. It may be blocking price checks — you can enter the details by hand."
+            var url = initialUrl
+            var body: String? = null
+            var finalUrl = initialUrl
+            var host = ""
+            var attempts = 0
+            // Some share links (e.g. s.daraz.com.np/s.XXXX) answer with an HTML "share bridge"
+            // page that redirects via JavaScript / <meta refresh> instead of an HTTP redirect.
+            // OkHttp cannot follow those, so resolve the embedded target and fetch it ourselves.
+            while (attempts < 3 && body == null) {
+                attempts++
+                val request = Request.Builder()
+                    .url(url)
+                    .header("User-Agent", USER_AGENT)
+                    .header(
+                        "Accept",
+                        "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
                     )
+                    .header("Accept-Language", "en-US,en;q=0.9")
+                    .header("Cache-Control", "no-cache")
+                    .build()
+
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        return@withContext ScrapeResult.Failure(
+                            "The store returned HTTP ${response.code}. It may be blocking price checks — you can enter the details by hand."
+                        )
+                    }
+                    val pageBody = response.body?.string()
+                    if (pageBody.isNullOrBlank()) {
+                        return@withContext ScrapeResult.Failure("The page came back empty. Try the link again or add details by hand.")
+                    }
+                    finalUrl = response.request.url.toString()
+                    host = response.request.url.host
+                    val bridgeTarget = resolveShareBridgeTarget(pageBody, finalUrl)
+                    if (bridgeTarget != null && bridgeTarget != finalUrl) {
+                        url = bridgeTarget
+                    } else {
+                        body = pageBody
+                    }
                 }
-                val body = response.body?.string()
-                if (body.isNullOrBlank()) {
-                    return@use ScrapeResult.Failure("The page came back empty. Try the link again or add details by hand.")
-                }
-                val finalUrl = response.request.url.toString()
-                val host = response.request.url.host
-                val document = Jsoup.parse(body, finalUrl)
-                val metadata = extract(document, finalUrl, host, rawUrl)
-                if (metadata.title == null && metadata.price == null) {
-                    ScrapeResult.Failure("We couldn't read this page. Add the details by hand and we'll still track the price.")
-                } else {
-                    ScrapeResult.Success(metadata)
-                }
+            }
+
+            val page = body
+                ?: return@withContext ScrapeResult.Failure(
+                    "Couldn't resolve that share link. Try opening it and copying the product URL."
+                )
+            val document = Jsoup.parse(page, finalUrl)
+            val metadata = extract(document, finalUrl, host, rawUrl)
+            // Hukut renders its prices client-side, so the HTML only carries the current price
+            // (JSON-LD). Its product API exposes the struck-through original price too.
+            val enriched = if (host.endsWith("hukut.com", ignoreCase = true)) {
+                enrichHukut(metadata, finalUrl)
+            } else {
+                metadata
+            }
+            if (enriched.title == null && enriched.price == null) {
+                ScrapeResult.Failure("We couldn't read this page. Add the details by hand and we'll still track the price.")
+            } else {
+                ScrapeResult.Success(enriched)
             }
         } catch (e: Exception) {
             ScrapeResult.Failure(
                 "Couldn't reach that page (${e.javaClass.simpleName}). Check the link or enter the details by hand."
             )
         }
+    }
+
+    /**
+     * Hukut (hukut.com) is a Next.js storefront that loads product data from its own API after
+     * hydration. The server HTML only exposes the current price through JSON-LD, so the original
+     * (struck-through) price is missing. Its product API carries both `price` (list) and
+     * `sellingPrice`/`salePrice` (current) per variant, which is exactly what we need.
+     */
+    private fun enrichHukut(base: ProductMetadata, pageUrl: String): ProductMetadata {
+        val slug = runCatching {
+            java.net.URI(pageUrl).path.orEmpty()
+                .trim('/')
+                .substringAfterLast('/')
+                .substringBefore(".html")
+        }.getOrNull()?.takeIf { it.isNotBlank() } ?: return base
+
+        val identifier = fetchJsonObject(
+            "https://hukut.com/api-server/v1/slug/${java.net.URLEncoder.encode(slug, "UTF-8")}"
+        )?.optJSONObject("data")?.optString("identifier")?.takeIf { it.isNotBlank() } ?: return base
+        val data = fetchJsonObject("https://hukut.com/api-server/v1/product/$identifier")
+            ?.optJSONObject("data") ?: return base
+
+        fun num(obj: JSONObject?, key: String): Double? {
+            if (obj == null || !obj.has(key) || obj.isNull(key)) return null
+            val value = obj.optDouble(key, Double.NaN)
+            return value.takeIf { !it.isNaN() && it > 0.0 }
+        }
+
+        fun instant(raw: String?): Long? {
+            val value = raw?.takeIf { it.isNotBlank() && !it.equals("null", true) } ?: return null
+            return runCatching { java.time.Instant.parse(value).toEpochMilli() }.getOrNull()
+        }
+
+        fun active(startKey: String, endKey: String, obj: JSONObject?): Boolean {
+            val now = System.currentTimeMillis()
+            val start = instant(obj?.optString(startKey))
+            val end = instant(obj?.optString(endKey))
+            return (start == null || now >= start) && (end == null || now <= end)
+        }
+
+        val variants = data.optJSONArray("variants")
+        val variant = if (variants == null) {
+            null
+        } else {
+            (0 until variants.length())
+                .mapNotNull { variants.optJSONObject(it) }
+                .firstOrNull { it.optBoolean("isDefault") }
+                ?: variants.optJSONObject(0)
+        }
+
+        val listPrice = num(variant, "price") ?: num(data, "price")
+        val sellingPrice = num(variant, "sellingPrice") ?: num(data, "sellingPrice")
+        val salePrice = num(variant, "salePrice") ?: num(data, "salePrice")
+
+        var price = when {
+            sellingPrice != null && (listPrice == null || sellingPrice <= listPrice) -> sellingPrice
+            listPrice != null -> listPrice
+            else -> null
+        }
+        if (salePrice != null && listPrice != null && salePrice < listPrice - 0.01 &&
+            active("saleStart", "saleEnd", variant)
+        ) {
+            price = salePrice
+        }
+
+        // An active product-level offer can cut the price further (percentage or flat amount).
+        val offer = data.optJSONObject("offer")
+        val offerDiscount = num(offer, "discount")
+        if (offer != null && offer.optBoolean("active", true) && offerDiscount != null &&
+            active("startDate", "endDate", offer) && listPrice != null
+        ) {
+            val discounted = if (offer.optString("discountType").equals("percent", true)) {
+                listPrice - listPrice * offerDiscount / 100.0
+            } else {
+                (listPrice - offerDiscount).coerceAtLeast(0.0)
+            }
+            if (discounted > 0.0 && discounted < listPrice - 0.01) {
+                price = price?.let { minOf(it, discounted) } ?: discounted
+            }
+        }
+
+        val resolvedList = listPrice?.takeIf { price != null && it > price + 0.01 }
+
+        val imageUrls = buildList {
+            val images = data.optJSONArray("productImages")
+            if (images != null) {
+                for (i in 0 until images.length()) {
+                    val image = images.optJSONObject(i)?.optJSONObject("image") ?: continue
+                    val url = image.optString("cdn").takeIf { it.isNotBlank() }
+                        ?: image.optString("url").takeIf { it.isNotBlank() }
+                    if (url != null) add(url)
+                }
+            }
+            val variantImages = variant?.optJSONArray("variantImages")
+            if (variantImages != null) {
+                for (i in 0 until variantImages.length()) {
+                    val image = variantImages.optJSONObject(i)?.optJSONObject("image") ?: continue
+                    val url = image.optString("cdn").takeIf { it.isNotBlank() }
+                        ?: image.optString("url").takeIf { it.isNotBlank() }
+                    if (url != null) add(url)
+                }
+            }
+        }.distinct().take(12)
+
+        val apiTitle = data.optString("name").takeIf { it.isNotBlank() }
+        val apiBrand = data.optJSONObject("brand")?.optString("name")?.takeIf { it.isNotBlank() }
+        val marketStatus = variant?.optString("marketStatus")
+        val inStock = when {
+            marketStatus.equals("inStock", true) -> true
+            marketStatus.equals("outOfStock", true) || marketStatus.equals("preOrder", true) -> false
+            data.optBoolean("isUnavailable") -> false
+            else -> base.inStock
+        }
+
+        return base.copy(
+            title = apiTitle?.let { cleanTitle(it, base.storeName ?: "Hukut") } ?: base.title,
+            imageUrl = imageUrls.firstOrNull() ?: base.imageUrl,
+            imageUrls = imageUrls.ifEmpty { base.imageUrls },
+            price = price ?: base.price,
+            listPrice = resolvedList ?: if (price == null) base.listPrice else null,
+            currencyCode = "NPR",
+            brand = apiBrand ?: base.brand,
+            inStock = inStock
+        )
+    }
+
+    /** Fetches a small JSON document, returning null on any network/parse failure. */
+    private fun fetchJsonObject(url: String): JSONObject? = try {
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", USER_AGENT)
+            .header("Accept", "application/json")
+            .build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                null
+            } else {
+                response.body?.string()?.let { runCatching { JSONObject(it) }.getOrNull() }
+            }
+        }
+    } catch (e: Exception) {
+        null
+    }
+
+    /**
+     * Resolves the product URL embedded in a "share bridge" page (e.g. Daraz `s.daraz.com.np/s.*`).
+     *
+     * These pages return HTTP 200 and only redirect client-side, so [okhttp3.OkHttpClient] leaves us
+     * on the bridge page. The real destination is exposed through `<link rel="origin">`, a
+     * `<meta http-equiv="refresh">`, or the inline `REDIRECTURL` script.
+     */
+    private fun resolveShareBridgeTarget(html: String, pageUrl: String): String? {
+        val isBridge = html.contains("share_bridge_page", ignoreCase = true) ||
+            Regex("""<link[^>]+rel\s*=\s*["']origin["']""", RegexOption.IGNORE_CASE).containsMatchIn(html)
+        if (!isBridge) return null
+
+        fun absolute(raw: String?): String? {
+            val value = raw?.trim()?.replace("&amp;", "&")?.takeIf { it.isNotEmpty() } ?: return null
+            normalizeUrl(value)?.let { return it }
+            return runCatching { java.net.URI(pageUrl).resolve(value).toString() }
+                .getOrNull()
+                ?.let(::normalizeUrl)
+        }
+
+        Regex("""<link[^>]+rel\s*=\s*["']origin["'][^>]*href\s*=\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+            .find(html)?.groupValues?.getOrNull(1)?.let { return absolute(it) }
+        Regex("""<link[^>]+href\s*=\s*["']([^"']+)["'][^>]*rel\s*=\s*["']origin["']""", RegexOption.IGNORE_CASE)
+            .find(html)?.groupValues?.getOrNull(1)?.let { return absolute(it) }
+        Regex(
+            """<meta[^>]+http-equiv\s*=\s*["']refresh["'][^>]*content\s*=\s*["'][^"']*?url\s*=\s*([^"']+)["']""",
+            RegexOption.IGNORE_CASE
+        ).find(html)?.groupValues?.getOrNull(1)?.let { return absolute(it) }
+        Regex("""REDIRECTURL\s*=\s*new\s+URL\(\s*["']([^"']+)["']\s*\)""", RegexOption.IGNORE_CASE)
+            .find(html)?.groupValues?.getOrNull(1)?.let { return absolute(it) }
+        return null
     }
 
     private fun extract(document: Document, finalUrl: String, host: String, rawUrl: String): ProductMetadata {
@@ -258,9 +462,29 @@ class ProductScraper(
      * Handles WooCommerce `<del>/<ins>`, screen-reader text, and common sale/original selectors.
      */
     private fun extractDomProductPrices(document: Document): Pair<Double?, Double?> {
-        fun parseAmount(el: Element?): Double? = MoneyParser.parse(el?.text())
+        fun parseAmount(el: Element?): Double? = MoneyParser.parse(el?.attr("data-price-amount"))
+            ?: MoneyParser.parse(el?.text())
             ?: MoneyParser.parse(el?.attr("content"))
             ?: MoneyParser.parse(el?.attr("data-price"))
+
+        // Magento 2 (e.g. mudita.com.np): the authoritative values are in data-price-amount
+        // attributes on [data-price-type=finalPrice] / [data-price-type=oldPrice]. The visible
+        // text uses locale grouping ("NPR 2,31,999"), so prefer the raw attribute.
+        val typedPrices = document.select("[data-price-type]")
+        fun typedAmount(type: String): Double? = typedPrices
+            .firstOrNull { it.attr("data-price-type").equals(type, ignoreCase = true) }
+            ?.let { el ->
+                MoneyParser.parse(el.attr("data-price-amount")) ?: MoneyParser.parse(el.text())
+            }
+        val magentoFinal = typedAmount("finalPrice")
+        if (magentoFinal != null) {
+            val magentoOld = typedAmount("oldPrice")
+            return if (magentoOld != null && magentoOld > magentoFinal + 0.01) {
+                magentoFinal to magentoOld
+            } else {
+                magentoFinal to null
+            }
+        }
 
         val containerSelectors = listOf(
             ".summary.entry-summary .price",
@@ -277,6 +501,9 @@ class ProductScraper(
             "[class*=pdp-price]",
             ".product-price",
             "[class*=ProductPrice]",
+            ".price-box",
+            "[data-role=priceBox]",
+            ".product-info-main .price-box",
             "[itemprop=offers] [itemprop=price]"
         )
 
@@ -948,8 +1175,13 @@ class ProductScraper(
                     ?: MoneyParser.parse(obj.optString("salePrice"))
                     ?: MoneyParser.parse(obj.optString("price"))
                 val listPrice = MoneyParser.parse(obj.optString("pdt_original_price"))
+                    ?: MoneyParser.parse(obj.optString("pdt_price_original"))
+                    ?: MoneyParser.parse(obj.optString("pdt_market_price"))
                     ?: MoneyParser.parse(obj.optString("originalPrice"))
                     ?: MoneyParser.parse(obj.optString("listPrice"))
+                    // Daraz/Lazada expose the discount as a percentage (e.g. "-15%") rather than
+                    // a separate original price, so derive the list price from it when needed.
+                    ?: listPriceFromDiscount(price, obj.optString("pdt_discount"))
                 val currency = normalizeCurrency(obj.optJSONObject("core")?.optString("currencyCode"))
                     ?: normalizeCurrency(obj.optString("currencyCode"))
                 val title = obj.optString("pdt_name").takeIf { it.isNotBlank() && it != "null" }
@@ -999,6 +1231,32 @@ class ProductScraper(
                 price = parsedSale,
                 listPrice = parsedList
             )
+        }
+        return null
+    }
+
+    /**
+     * Derives an original/list price from a discount label when the page only exposes the current
+     * price. Handles percentages ("-15%", "15% off", "20 %") and absolute amounts ("Rs. 500 off").
+     */
+    private fun listPriceFromDiscount(current: Double?, discountRaw: String?): Double? {
+        if (current == null || current <= 0.0) return null
+        val raw = discountRaw?.trim().orEmpty()
+        if (raw.isEmpty() || raw.equals("null", ignoreCase = true)) return null
+
+        val percent = Regex("""([0-9]+(?:[.,][0-9]+)?)\s*%""").find(raw)
+            ?.groupValues?.getOrNull(1)
+            ?.replace(',', '.')
+            ?.toDoubleOrNull()
+        if (percent != null && percent > 0.0 && percent < 100.0) {
+            val list = current / (1.0 - percent / 100.0)
+            if (list > current + 0.01) return list
+        }
+
+        val amount = MoneyParser.parse(raw)
+        if (amount != null && amount > 0.0) {
+            val list = current + amount
+            if (list > current + 0.01) return list
         }
         return null
     }

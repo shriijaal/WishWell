@@ -56,6 +56,7 @@ class StoreRegistry {
         StoreDefinition("sharmazacoustic", "Sharmaz Acoustic", listOf("sharmazacoustic.", "sharmazacoustics."), "https://sharmazacoustic.com/search?q=%s"),
         StoreDefinition("jeevee", "Jeevee", listOf("jeevee."), "https://www.jeevee.com/search?q=%s"),
         StoreDefinition("mudita", "Mudita", listOf("mudita.com.np"), "https://mudita.com.np/?s=%s"),
+        StoreDefinition("hukut", "Hukut", listOf("hukut.com"), "https://hukut.com/search?q=%s"),
         StoreDefinition("booksmandala", "Booksmandala", listOf("booksmandala."), "https://booksmandala.com/search?q=%s"),
         StoreDefinition("ergokeysnepal", "ErgoKeys Nepal", listOf("ergokeysnepal."), "https://ergokeysnepal.com/?s=%s&post_type=product"),
         StoreDefinition("rzzyofficial", "RZZY Official", listOf("rzzyofficial."), "https://www.rzzyofficial.com/?s=%s&post_type=product"),
@@ -104,6 +105,7 @@ class StoreRegistry {
             RegionalStore("Sharmaz Acoustic", "https://sharmazacoustic.com/search?q=%s", "NPR"),
             RegionalStore("Jeevee", "https://www.jeevee.com/search?q=%s", "NPR"),
             RegionalStore("Mudita", "https://mudita.com.np/?s=%s", "NPR"),
+            RegionalStore("Hukut", "https://hukut.com/search?q=%s", "NPR"),
             RegionalStore("Booksmandala", "https://booksmandala.com/search?q=%s", "NPR"),
             RegionalStore("ErgoKeys Nepal", "https://ergokeysnepal.com/?s=%s&post_type=product", "NPR"),
             RegionalStore("RZZY Official", "https://www.rzzyofficial.com/?s=%s&post_type=product", "NPR"),
@@ -147,7 +149,8 @@ class StoreRegistry {
         host == null -> "USD"
         host.contains("daraz.com.np") || host.contains("daraz.np") || host.contains("itti.com.np") -> "NPR"
         host.endsWith(".np") || host.contains("gadgetbytenepal.") || host.contains("sharmazacoustic") ||
-            host.contains("jeevee.") || host.contains("booksmandala.") || host.contains("ergokeysnepal.") -> "NPR"
+            host.contains("jeevee.") || host.contains("booksmandala.") || host.contains("ergokeysnepal.") ||
+            host.contains("hukut.") -> "NPR"
         host.contains(".co.uk") || host.endsWith("amazon.co.uk") -> "GBP"
         host.contains("amazon.in") || host.contains("flipkart") || host.contains("myntra") || host.contains("ajio") -> "INR"
         host.contains("amazon.de") || host.contains("amazon.fr") || host.contains("amazon.it") || host.contains("amazon.es") -> "EUR"
