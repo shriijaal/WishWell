@@ -19,6 +19,7 @@ enum class SortMode(val label: String) {
     BIGGEST_DROP("Biggest drop"),
     PRICE_LOW("Price: low to high"),
     PRICE_HIGH("Price: high to low"),
+    STORE("Store A–Z"),
     NAME("Name A–Z")
 }
 
@@ -48,6 +49,8 @@ data class WishlistUiState(
     val categories: List<CategoryWithCount> = emptyList(),
     val query: String = "",
     val categoryIds: Set<Long> = emptySet(),
+    val storeNames: List<String> = emptyList(),
+    val selectedStores: Set<String> = emptySet(),
     val sort: SortMode = SortMode.RECENT,
     val attentionFilter: AttentionFilter = AttentionFilter.ALL,
     val refreshing: Boolean = false,
@@ -60,13 +63,15 @@ data class WishlistUiState(
     val tagMap: Map<Long, Set<Long>> = emptyMap()
 ) {
     val hasAnyItems: Boolean get() = allItems.isNotEmpty()
-    val isFiltered: Boolean get() = query.isNotBlank() || categoryIds.isNotEmpty() || attentionFilter != AttentionFilter.ALL
+    val isFiltered: Boolean get() = query.isNotBlank() || categoryIds.isNotEmpty() ||
+        selectedStores.isNotEmpty() || attentionFilter != AttentionFilter.ALL
     val selectionMode: Boolean get() = selectedIds.isNotEmpty()
 }
 
 private data class Filters(
     val query: String,
     val categoryIds: Set<Long>,
+    val stores: Set<String>,
     val sort: SortMode,
     val attentionFilter: AttentionFilter
 )
@@ -78,14 +83,15 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
 
     private val query = MutableStateFlow("")
     private val categoryFilters = MutableStateFlow<Set<Long>>(emptySet())
+    private val storeFilters = MutableStateFlow<Set<String>>(emptySet())
     private val sort = MutableStateFlow(SortMode.RECENT)
     private val attentionFilter = MutableStateFlow(AttentionFilter.ALL)
     private val refreshing = MutableStateFlow(false)
     private val message = MutableStateFlow<String?>(null)
     private val selectedIds = MutableStateFlow<Set<Long>>(emptySet())
 
-    private val filters = combine(query, categoryFilters, sort, attentionFilter) { q, c, s, a ->
-        Filters(q, c, s, a)
+    private val filters = combine(query, categoryFilters, storeFilters, sort, attentionFilter) { q, c, st, s, a ->
+        Filters(q, c, st, s, a)
     }
     private val status = combine(refreshing, message, prefs.readNotificationKeys) { r, m, read -> Triple(r, m, read) }
 
@@ -119,6 +125,8 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
                 }
             }
 
+            val matchesStore = f.stores.isEmpty() || item.item.storeName in f.stores
+
             val matchesAttention = when (f.attentionFilter) {
                 AttentionFilter.ALL -> true
                 AttentionFilter.ON_SALE -> (item.discountPercent ?: 0) > 0 || item.isAtLowest
@@ -130,17 +138,23 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
                 }
                 AttentionFilter.CHECK_FAILED -> item.item.lastCheckFailed
             }
-            matchesQuery && matchesCategory && matchesAttention
+            matchesQuery && matchesCategory && matchesStore && matchesAttention
         }
 
         val validIds = items.mapTo(mutableSetOf()) { it.item.id }
         val prunedSelected = selected.intersect(validIds)
+        val storeNames = items
+            .mapNotNull { it.item.storeName.trim().takeIf(String::isNotBlank) }
+            .distinct()
+            .sortedBy { it.lowercase() }
         WishlistUiState(
             items = sortItems(filtered, f.sort),
             allItems = items,
             categories = categories,
             query = f.query,
             categoryIds = f.categoryIds,
+            storeNames = storeNames,
+            selectedStores = f.stores,
             sort = f.sort,
             attentionFilter = f.attentionFilter,
             tagMap = tagMap,
@@ -176,6 +190,16 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
         categoryFilters.value = emptySet()
     }
 
+    fun toggleStore(store: String) {
+        val current = storeFilters.value.toMutableSet()
+        if (!current.add(store)) current.remove(store)
+        storeFilters.value = current
+    }
+
+    fun clearStores() {
+        storeFilters.value = emptySet()
+    }
+
     fun setSort(mode: SortMode) {
         sort.value = mode
     }
@@ -187,6 +211,7 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
     fun clearFilters() {
         query.value = ""
         categoryFilters.value = emptySet()
+        storeFilters.value = emptySet()
         attentionFilter.value = AttentionFilter.ALL
     }
 
@@ -361,6 +386,11 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
 
             SortMode.PRICE_HIGH -> items.sortedWith(
                 compareByDescending<ItemWithStats, Double?>(nullsFirst()) { it.price }
+            )
+
+            SortMode.STORE -> items.sortedWith(
+                compareBy<ItemWithStats> { it.item.storeName.lowercase() }
+                    .thenBy { it.item.title.lowercase() }
             )
 
             SortMode.NAME -> items.sortedBy { it.item.title.lowercase() }

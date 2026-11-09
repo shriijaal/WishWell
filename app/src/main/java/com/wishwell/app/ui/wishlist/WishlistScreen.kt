@@ -48,6 +48,7 @@ import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.LocalOffer
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Storefront
 import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material.icons.rounded.ViewCarousel
 import androidx.compose.material.icons.automirrored.rounded.ViewList
@@ -228,6 +229,8 @@ fun WishlistScreen(
                 FilterBar(
                     state = state,
                     onCategoryToggle = viewModel::toggleCategory,
+                    onClearStores = viewModel::clearStores,
+                    onStoreToggle = viewModel::toggleStore,
                     onAttention = viewModel::setAttentionFilter
                 )
             }
@@ -241,6 +244,7 @@ fun WishlistScreen(
                     val filterNote = buildList {
                         if (state.query.isNotBlank()) add("search")
                         if (state.categoryIds.isNotEmpty()) add("${state.categoryIds.size} categories")
+                        if (state.selectedStores.isNotEmpty()) add("${state.selectedStores.size} stores")
                         if (state.attentionFilter != AttentionFilter.ALL) add("filter")
                     }
                     Text(
@@ -1548,9 +1552,12 @@ private fun LazyListScope.carouselRows(
 private fun FilterBar(
     state: WishlistUiState,
     onCategoryToggle: (Long) -> Unit,
+    onClearStores: () -> Unit,
+    onStoreToggle: (String) -> Unit,
     onAttention: (AttentionFilter) -> Unit
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    var categoryExpanded by remember { mutableStateOf(false) }
+    var storeExpanded by remember { mutableStateOf(false) }
     val hasUnsorted = state.allItems.any { item -> (state.tagMap[item.item.id] ?: emptySet()).isEmpty() }
     val selectedCategoryIds = state.categoryIds
     val selectedCategories = state.categories.filter { selectedCategoryIds.contains(it.category.id) }
@@ -1560,6 +1567,12 @@ private fun FilterBar(
         else -> "${selectedCategoryIds.size} categories"
     }
     val categoryGlyph = if (selectedCategoryIds.isEmpty()) Icons.Rounded.Category else categoryIcon(selectedCategories.firstOrNull()?.category?.emoji, selectedCategories.firstOrNull()?.category?.name)
+    val selectedStores = state.selectedStores
+    val storeLabel = when {
+        selectedStores.isEmpty() -> "All stores"
+        selectedStores.size == 1 -> selectedStores.first()
+        else -> "${selectedStores.size} stores"
+    }
     val onSale = state.attentionFilter == AttentionFilter.ON_SALE
 
     Row(
@@ -1574,11 +1587,11 @@ private fun FilterBar(
             WishPill(
                 text = categoryLabel,
                 selected = selectedCategoryIds.isNotEmpty(),
-                onClick = { expanded = !expanded },
+                onClick = { categoryExpanded = !categoryExpanded },
                 leadingIcon = categoryGlyph,
                 trailingIcon = Icons.Rounded.ExpandMore
             )
-            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenu(expanded = categoryExpanded, onDismissRequest = { categoryExpanded = false }) {
                 DropdownMenuItem(
                     text = { Text("All items") },
                     onClick = {
@@ -1622,6 +1635,41 @@ private fun FilterBar(
                         },
                         trailingIcon = {
                             if (isUnsortedSelected) Icons.Rounded.Check else null
+                        }
+                    )
+                }
+            }
+        }
+
+        Box {
+            WishPill(
+                text = storeLabel,
+                selected = selectedStores.isNotEmpty(),
+                onClick = { storeExpanded = !storeExpanded },
+                leadingIcon = Icons.Rounded.Storefront,
+                trailingIcon = Icons.Rounded.ExpandMore
+            )
+            DropdownMenu(expanded = storeExpanded, onDismissRequest = { storeExpanded = false }) {
+                DropdownMenuItem(
+                    text = { Text("All stores") },
+                    onClick = { onClearStores() },
+                    leadingIcon = {
+                        Icon(Icons.Rounded.Storefront, contentDescription = null, modifier = Modifier.size(18.dp))
+                    },
+                    trailingIcon = {
+                        if (selectedStores.isEmpty()) Icons.Rounded.Check else null
+                    }
+                )
+                state.storeNames.forEach { store ->
+                    val isSelected = selectedStores.contains(store)
+                    DropdownMenuItem(
+                        text = { Text(store) },
+                        onClick = { onStoreToggle(store) },
+                        leadingIcon = {
+                            Icon(Icons.Rounded.Storefront, contentDescription = null, modifier = Modifier.size(18.dp))
+                        },
+                        trailingIcon = {
+                            if (isSelected) Icons.Rounded.Check else null
                         }
                     )
                 }
