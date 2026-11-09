@@ -594,7 +594,9 @@ fun SettingsScreen(container: AppContainer) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 OutlinedButton(
                     onClick = {
-                        val name = "wishwell-backup-${java.time.LocalDate.now()}.json"
+                        val stamp = java.time.LocalDateTime.now()
+                            .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmssSSS"))
+                        val name = "wishwell-backup-$stamp.json"
                         exportLauncher.launch(name)
                     },
                     enabled = !backupBusy,
