@@ -163,7 +163,7 @@ internal fun WidgetListContent(
                     .clickable(actionStartActivity(syncWidgetIntent()))
             ) {
                 Text(
-                    text = "Sync",
+                    text = "↻ Sync",
                     style = TextStyle(
                         color = ColorProvider(colors.ink),
                         fontSize = 10.sp,
