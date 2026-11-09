@@ -132,22 +132,32 @@ internal fun WidgetListContent(
         modifier = GlanceModifier
             .fillMaxSize()
             .background(ColorProvider(colors.paper.copy(alpha = alpha)))
-            .padding(12.dp)
+            .padding(16.dp)
             .clickable(actionStartActivity(appIntent()))
     ) {
+        // ── Header ──
         Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = title,
-                style = TextStyle(
-                    color = ColorProvider(colors.ink),
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold
-                ),
-                modifier = GlanceModifier.defaultWeight()
-            )
+            Column(modifier = GlanceModifier.defaultWeight()) {
+                Text(
+                    text = title,
+                    style = TextStyle(
+                        color = ColorProvider(colors.ink),
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    maxLines = 1
+                )
+                Spacer(modifier = GlanceModifier.height(4.dp))
+                Text(
+                    text = subtitle,
+                    style = TextStyle(color = ColorProvider(colors.muted), fontSize = 10.sp),
+                    maxLines = 2
+                )
+            }
+            Spacer(modifier = GlanceModifier.width(8.dp))
             Box(
                 modifier = GlanceModifier
-                    .background(ColorProvider(Color(0xFFCFE39C)))
+                    .background(ColorProvider(colors.forest))
                     .cornerRadius(10.dp)
                     .padding(horizontal = 10.dp, vertical = 4.dp)
                     .clickable(actionStartActivity(syncWidgetIntent()))
@@ -155,27 +165,30 @@ internal fun WidgetListContent(
                 Text(
                     text = "Sync",
                     style = TextStyle(
-                        color = ColorProvider(Color(0xFF1F3D2E)),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium
+                        color = ColorProvider(colors.ink),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
                     )
                 )
             }
         }
-        Spacer(modifier = GlanceModifier.height(4.dp))
-        Text(
-            text = subtitle,
-            style = TextStyle(color = ColorProvider(colors.muted), fontSize = 11.sp),
-            maxLines = 1
-        )
+        Spacer(modifier = GlanceModifier.height(12.dp))
+        // ── Divider ──
+        Box(
+            modifier = GlanceModifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(ColorProvider(colors.hairline))
+        ) { }
         Spacer(modifier = GlanceModifier.height(16.dp))
+
         if (entries.isEmpty()) {
             Box(
                 modifier = GlanceModifier
                     .fillMaxWidth()
                     .background(ColorProvider(colors.sunken.copy(alpha = alpha)))
-                    .cornerRadius(12.dp)
-                    .padding(12.dp),
+                    .cornerRadius(16.dp)
+                    .padding(20.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
@@ -186,8 +199,8 @@ internal fun WidgetListContent(
         } else {
             LazyColumn(modifier = GlanceModifier.fillMaxSize()) {
                 items(entries, itemId = { it.id }) { entry ->
-                    EntryRow(entry = entry, colors = colors, alpha = alpha)
-                    Spacer(modifier = GlanceModifier.height(24.dp))
+                    EntryRow(entry = entry, colors = colors, alpha = alpha, style = settings.style)
+                    Spacer(modifier = GlanceModifier.height(12.dp))
                 }
             }
         }
@@ -198,52 +211,59 @@ internal fun WidgetListContent(
 private fun EntryRow(
     entry: WidgetEntry,
     colors: WidgetColorsHolder,
-    alpha: Float
+    alpha: Float,
+    style: String = "list"
 ) {
-    Row(
+    val isCompact = style == "compact"
+
+    Box(
         modifier = GlanceModifier
             .fillMaxWidth()
             .background(ColorProvider(colors.sunken.copy(alpha = alpha)))
-            .cornerRadius(12.dp)
-            .padding(horizontal = 10.dp, vertical = 8.dp)
+            .cornerRadius(16.dp)
+            .padding(horizontal = 16.dp, vertical = 12.dp)
             .clickable(actionStartActivity(appIntent(entry.id))),
-        verticalAlignment = Alignment.CenterVertically
+        contentAlignment = Alignment.Center
     ) {
-        Column(modifier = GlanceModifier.defaultWeight()) {
-            Text(
-                text = entry.title,
-                style = TextStyle(
-                    color = ColorProvider(colors.ink),
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium
-                ),
-                maxLines = 1
-            )
-            Spacer(modifier = GlanceModifier.height(1.dp))
-            Text(
-                text = "${entry.storeName} · ${entry.priceText}",
-                style = TextStyle(color = ColorProvider(colors.muted), fontSize = 11.sp),
-                maxLines = 1
-            )
-        }
-        entry.badge?.let { badge ->
-            Spacer(modifier = GlanceModifier.width(6.dp))
-            Box(
-                modifier = GlanceModifier
-                    .background(ColorProvider(if (entry.isDrop) Color(0xFFDCE8D6) else colors.hairline))
-                    .cornerRadius(8.dp)
-                    .padding(horizontal = 6.dp, vertical = 3.dp)
-            ) {
+        Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = GlanceModifier.defaultWeight()) {
                 Text(
-                    text = badge,
+                    text = entry.title,
                     style = TextStyle(
-                        color = ColorProvider(
-                            if (entry.isDrop) Color(0xFF1F3D2E) else colors.ink
-                        ),
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                        color = ColorProvider(colors.ink),
+                        fontSize = if (isCompact) 11.sp else 14.sp,
+                        fontWeight = FontWeight.Medium
+                    ),
+                    maxLines = if (isCompact) 1 else 2
                 )
+                if (!isCompact) {
+                    Spacer(modifier = GlanceModifier.height(2.dp))
+                    Text(
+                        text = "${entry.storeName} · ${entry.priceText}",
+                        style = TextStyle(color = ColorProvider(colors.muted), fontSize = 10.sp),
+                        maxLines = 1
+                    )
+                }
+            }
+            entry.badge?.let { badge ->
+                Spacer(modifier = GlanceModifier.width(8.dp))
+                Box(
+                    modifier = GlanceModifier
+                        .background(ColorProvider(if (entry.isDrop) Color(0xFFDCE8D6) else colors.hairline))
+                        .cornerRadius(8.dp)
+                        .padding(horizontal = 6.dp, vertical = 3.dp)
+                ) {
+                    Text(
+                        text = badge,
+                        style = TextStyle(
+                            color = ColorProvider(
+                                if (entry.isDrop) Color(0xFF1F3D2E) else colors.ink
+                            ),
+                            fontSize = if (isCompact) 8.sp else 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    )
+                }
             }
         }
     }
