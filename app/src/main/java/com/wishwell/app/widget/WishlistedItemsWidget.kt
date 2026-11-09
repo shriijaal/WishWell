@@ -41,7 +41,7 @@ import kotlinx.coroutines.launch
 class WishlistedItemsWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, glanceId: GlanceId) {
         val entries = WidgetData.load(context, dropsOnly = false, limit = 8)
-        val settings = WidgetSettingsStore.load(context, glanceId.toString())
+        val settings = WidgetSettingsStore.load(context, "default")
         provideContent {
             WidgetListContent(
                 context = context,
@@ -52,13 +52,6 @@ class WishlistedItemsWidget : GlanceAppWidget() {
                 settings = settings
             )
         }
-    }
-}
-
-private fun widgetAccent(context: Context, settings: WidgetSettingsStore.WidgetSettings): Color {
-    return when (settings.theme) {
-        "dark" -> Color(0xFFCFE39C)
-        else -> Color(0xFF1F3D2E)
     }
 }
 

@@ -9,13 +9,13 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -54,10 +54,10 @@ import kotlin.math.roundToInt
 /**
  * Configuration activity for widgets.
  *
- * Declared as `android:configure` in both widget-info XML files, so Android launches this
- * when the user adds a new widget or long-presses an existing widget and chooses "Widget
- * options" / reconfigures. Receives `AppWidgetManager.EXTRA_APPWIDGET_ID` and returns
- * `RESULT_OK` with that ID so the system completes the add/reconfigure flow.
+ * Declared as `android:configure` in the widget-info XML, so Android launches this
+ * when the user adds a new widget or long-presses an existing widget and chooses
+ * "Widget options" / reconfigures. Receives `AppWidgetManager.EXTRA_APPWIDGET_ID`
+ * and returns `RESULT_OK` with that ID so the system completes the add/reconfigure flow.
  */
 class WidgetConfigureActivity : ComponentActivity() {
 
@@ -117,10 +117,10 @@ private fun WidgetConfigureScreen(
             style = MaterialTheme.typography.bodyMedium,
             color = extra.muted
         )
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(20.dp))
 
         WidgetSettingsEditor(
-            widgetKey = appWidgetId.toString(),
+            widgetKey = "default",
             onSave = onFinished
         )
     }
@@ -136,10 +136,7 @@ private fun WidgetSettingsEditor(
     val colors = MaterialTheme.colorScheme
     var settings by remember { mutableStateOf(WidgetSettingsStore.load(context, widgetKey)) }
 
-    val themes = listOf("system" to "System", "light" to "Light", "dark" to "Dark")
-    val styles = listOf("list" to "List", "card" to "Card", "compact" to "Compact")
-
-    // Theme
+    // ── Theme ──
     Text(
         text = "Theme",
         style = MaterialTheme.typography.titleMedium,
@@ -147,11 +144,19 @@ private fun WidgetSettingsEditor(
     )
     Spacer(modifier = Modifier.height(8.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        themes.forEach { (key, label) ->
+        listOf(
+            "system" to "System",
+            "light" to "Light",
+            "dark" to "Dark"
+        ).forEach { (key, label) ->
             val selected = settings.theme == key
             Surface(
                 shape = RoundedCornerShape(12.dp),
-                color = if (selected) colors.primary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant,
+                color = if (selected) colors.primary.copy(alpha = 0.10f) else Color.Transparent,
+                border = androidx.compose.foundation.BorderStroke(
+                    if (selected) 2.dp else 1.dp,
+                    if (selected) colors.primary else extra.hairline
+                ),
                 modifier = Modifier
                     .clickable { settings = settings.copy(theme = key) }
                     .padding(horizontal = 12.dp, vertical = 8.dp)
@@ -165,56 +170,45 @@ private fun WidgetSettingsEditor(
         }
     }
 
-    Spacer(modifier = Modifier.height(24.dp))
+    Spacer(modifier = Modifier.height(20.dp))
 
-    // Style
+    // ── Style ──
     Text(
         text = "Style",
         style = MaterialTheme.typography.titleMedium,
         color = colors.onSurface
     )
     Spacer(modifier = Modifier.height(8.dp))
-    Column(
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        styles.forEach { (key, label) ->
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf(
+            "list" to "List",
+            "card" to "Card",
+            "compact" to "Compact"
+        ).forEach { (key, label) ->
             val selected = settings.style == key
-            Row(
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = if (selected) colors.primary.copy(alpha = 0.10f) else Color.Transparent,
+                border = androidx.compose.foundation.BorderStroke(
+                    if (selected) 2.dp else 1.dp,
+                    if (selected) colors.primary else extra.hairline
+                ),
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { settings = settings.copy(style = key) },
-                verticalAlignment = Alignment.CenterVertically
+                    .clickable { settings = settings.copy(style = key) }
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(20.dp)
-                        .background(if (selected) colors.primary else Color.Transparent),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (selected) {
-                        Box(
-                            modifier = Modifier.size(8.dp).background(colors.onPrimary)
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.width(12.dp))
                 Text(
                     text = label,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = colors.onSurface
+                    color = if (selected) colors.primary else colors.onSurface
                 )
             }
-            Spacer(modifier = Modifier.height(4.dp))
-            HorizontalDivider(
-                color = extra.hairline.copy(alpha = 0.6f),
-                modifier = Modifier.fillMaxWidth()
-            )
         }
     }
 
-    Spacer(modifier = Modifier.height(24.dp))
+    Spacer(modifier = Modifier.height(20.dp))
 
-    // Transparency
+    // ── Transparency ──
     Text(
         text = "Transparency",
         style = MaterialTheme.typography.titleMedium,
@@ -244,9 +238,9 @@ private fun WidgetSettingsEditor(
         color = extra.muted
     )
 
-    Spacer(modifier = Modifier.height(24.dp))
+    Spacer(modifier = Modifier.height(20.dp))
 
-    // Blur
+    // ── Blur ──
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
