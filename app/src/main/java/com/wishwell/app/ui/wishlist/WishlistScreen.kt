@@ -44,9 +44,8 @@ import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.material.icons.rounded.DriveFileMove
 import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.GridView
-import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.LocalOffer
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SwapVert
@@ -82,6 +81,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -142,6 +142,10 @@ fun WishlistScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val extra = LocalWishExtraColors.current
     var viewMode by remember { mutableStateOf("list") } // list, grid, carousel
+    val sectionExpanded = remember { mutableStateMapOf<String, Boolean>() }
+    fun toggleSection(key: String) {
+        sectionExpanded[key] = !(sectionExpanded[key] ?: true)
+    }
     val listState = rememberLazyListState()
     val pullState = rememberPullToRefreshState()
     LaunchedEffect(state.selectionMode) { onSelectionModeChanged(state.selectionMode) }
@@ -324,11 +328,20 @@ fun WishlistScreen(
                             text = "Needs attention",
                             modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 4.dp),
                             trailing = {
-                                Text(
-                                    text = "${attention.size}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = extra.muted
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "${attention.size}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = extra.muted
+                                    )
+                                    IconButton(onClick = { toggleSection("attention") }) {
+                                        Icon(
+                                            imageVector = if (sectionExpanded["attention"] ?: true) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                                            contentDescription = if (sectionExpanded["attention"] ?: true) "Collapse attention" else "Expand attention",
+                                            tint = extra.muted
+                                        )
+                                    }
+                                }
                             }
                         )
                     }
@@ -339,12 +352,22 @@ fun WishlistScreen(
                         selectionMode = state.selectionMode,
                         onOpenItem = onOpenItem,
                         onToggleSelection = viewModel::toggleSelection,
-                        onEnterSelection = viewModel::enterSelection
+                        onEnterSelection = viewModel::enterSelection,
+                        expanded = sectionExpanded["attention"] ?: true
                     )
                     item(key = "section-library") {
                         SectionLabel(
                             text = "Library",
-                            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 4.dp)
+                            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 4.dp),
+                            trailing = {
+                                IconButton(onClick = { toggleSection("library") }) {
+                                    Icon(
+                                        imageVector = if (sectionExpanded["library"] ?: true) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                                        contentDescription = if (sectionExpanded["library"] ?: true) "Collapse library" else "Expand library",
+                                        tint = extra.muted
+                                    )
+                                }
+                            }
                         )
                     }
                     gridRows(
@@ -354,7 +377,8 @@ fun WishlistScreen(
                         selectionMode = state.selectionMode,
                         onOpenItem = onOpenItem,
                         onToggleSelection = viewModel::toggleSelection,
-                        onEnterSelection = viewModel::enterSelection
+                        onEnterSelection = viewModel::enterSelection,
+                        expanded = sectionExpanded["library"] ?: true
                     )
                 } else {
                     gridRows(
@@ -378,11 +402,20 @@ fun WishlistScreen(
                             text = "Needs attention",
                             modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 4.dp),
                             trailing = {
-                                Text(
-                                    text = "${attention.size}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = extra.muted
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "${attention.size}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = extra.muted
+                                    )
+                                    IconButton(onClick = { toggleSection("attention") }) {
+                                        Icon(
+                                            imageVector = if (sectionExpanded["attention"] ?: true) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                                            contentDescription = if (sectionExpanded["attention"] ?: true) "Collapse attention" else "Expand attention",
+                                            tint = extra.muted
+                                        )
+                                    }
+                                }
                             }
                         )
                     }
@@ -393,12 +426,22 @@ fun WishlistScreen(
                         selectionMode = state.selectionMode,
                         onOpenItem = onOpenItem,
                         onToggleSelection = viewModel::toggleSelection,
-                        onEnterSelection = viewModel::enterSelection
+                        onEnterSelection = viewModel::enterSelection,
+                        expanded = sectionExpanded["attention"] ?: true
                     )
                     item(key = "section-library") {
                         SectionLabel(
                             text = "Library",
-                            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 4.dp)
+                            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 4.dp),
+                            trailing = {
+                                IconButton(onClick = { toggleSection("library") }) {
+                                    Icon(
+                                        imageVector = if (sectionExpanded["library"] ?: true) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                                        contentDescription = if (sectionExpanded["library"] ?: true) "Collapse library" else "Expand library",
+                                        tint = extra.muted
+                                    )
+                                }
+                            }
                         )
                     }
                     carouselRows(
@@ -408,7 +451,8 @@ fun WishlistScreen(
                         selectionMode = state.selectionMode,
                         onOpenItem = onOpenItem,
                         onToggleSelection = viewModel::toggleSelection,
-                        onEnterSelection = viewModel::enterSelection
+                        onEnterSelection = viewModel::enterSelection,
+                        expanded = sectionExpanded["library"] ?: true
                     )
                 } else {
                     carouselRows(
@@ -432,15 +476,24 @@ fun WishlistScreen(
                             text = "Needs attention",
                             modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 4.dp),
                             trailing = {
-                                Text(
-                                    text = "${attention.size}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = extra.muted
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "${attention.size}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = extra.muted
+                                    )
+                                    IconButton(onClick = { toggleSection("attention") }) {
+                                        Icon(
+                                            imageVector = if (sectionExpanded["attention"] ?: true) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                                            contentDescription = if (sectionExpanded["attention"] ?: true) "Collapse attention" else "Expand attention",
+                                            tint = extra.muted
+                                        )
+                                    }
+                                }
                             }
                         )
                     }
-                    items(attention, key = { "attn-${it.item.id}" }) { item ->
+                    items(if (sectionExpanded["attention"] ?: true) attention else emptyList(), key = { "attn-${it.item.id}" }) { item ->
                         val id = item.item.id
                         val selected = id in state.selectedIds
                         SwipeableWishCard(
@@ -469,10 +522,19 @@ fun WishlistScreen(
                     item(key = "section-library") {
                         SectionLabel(
                             text = "Library",
-                            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 4.dp)
+                            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 4.dp),
+                            trailing = {
+                                IconButton(onClick = { toggleSection("library") }) {
+                                    Icon(
+                                        imageVector = if (sectionExpanded["library"] ?: true) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                                        contentDescription = if (sectionExpanded["library"] ?: true) "Collapse library" else "Expand library",
+                                        tint = extra.muted
+                                    )
+                                }
+                            }
                         )
                     }
-                    items(rest, key = { "lib-${it.item.id}" }) { item ->
+                    items(if (sectionExpanded["library"] ?: true) rest else emptyList(), key = { "lib-${it.item.id}" }) { item ->
                         val id = item.item.id
                         val selected = id in state.selectedIds
                         SwipeableWishCard(
@@ -1291,8 +1353,10 @@ private fun LazyListScope.gridRows(
     selectionMode: Boolean,
     onOpenItem: (Long) -> Unit,
     onToggleSelection: (Long) -> Unit,
-    onEnterSelection: (Long) -> Unit
+    onEnterSelection: (Long) -> Unit,
+    expanded: Boolean = true
 ) {
+    if (!expanded) return
     val rows = items.chunked(2)
     items(rows, key = { row -> "$keyPrefix-${row.joinToString("-") { it.item.id.toString() }}" }) { row ->
         Row(
@@ -1325,8 +1389,10 @@ private fun LazyListScope.carouselRows(
     selectionMode: Boolean,
     onOpenItem: (Long) -> Unit,
     onToggleSelection: (Long) -> Unit,
-    onEnterSelection: (Long) -> Unit
+    onEnterSelection: (Long) -> Unit,
+    expanded: Boolean = true
 ) {
+    if (!expanded) return
     if (items.isEmpty()) return
     item(key = "$keyPrefix-carousel") {
         LazyRow(
