@@ -72,6 +72,7 @@ import com.wishwell.app.ui.theme.isCustomAccentKey
 import com.wishwell.app.ui.theme.parseHexColor
 import com.wishwell.app.util.formatDateWithYear
 import com.wishwell.app.util.formatRelativeDay
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -605,11 +606,23 @@ fun SettingsScreen(container: AppContainer) {
                 }
                 OutlinedButton(
                     onClick = {
+                        // 1) Restore from tracked backup files (app internal storage)
                         val tracked = state.backupFiles
                         if (tracked.isNotEmpty()) {
                             viewModel.restoreFromBackupFile(tracked.first().path)
                         } else {
-                            viewModel.restoreFromDownloads()
+                            // 2) Scan Downloads folder for a backup file
+                            val downloadDir = File("/storage/emulated/0/Download")
+                            val backupFiles = downloadDir.listFiles()
+                                ?.filter { it.name.startsWith("wishwell-backup") && it.name.endsWith(".json") }
+                                ?.sortedByDescending { it.lastModified() }
+                                .orEmpty()
+                            if (backupFiles.isNotEmpty()) {
+                                viewModel.restoreFromBackupFile(backupFiles.first().absolutePath)
+                            } else {
+                                // 3) Fall back to file picker
+                                importLauncher.launch(arrayOf("application/json", "text/*", "*/*"))
+                            }
                         }
                     },
                     enabled = !backupBusy,
@@ -619,16 +632,6 @@ fun SettingsScreen(container: AppContainer) {
                 ) {
                     Text(if (backupBusy) "Working…" else "Restore", color = if (backupBusy) extra.muted else colors.onSurface)
                 }
-            }
-            Spacer(Modifier.height(8.dp))
-            OutlinedButton(
-                onClick = { importLauncher.launch(arrayOf("application/json", "text/*", "*/*")) },
-                enabled = !backupBusy,
-                shape = CircleShape,
-                modifier = Modifier.fillMaxWidth(),
-                border = BorderStroke(1.dp, extra.hairline)
-            ) {
-                Text(if (backupBusy) "Working…" else "Restore from file…", color = if (backupBusy) extra.muted else colors.onSurface)
             }
             Spacer(Modifier.height(8.dp))
             OutlinedButton(
