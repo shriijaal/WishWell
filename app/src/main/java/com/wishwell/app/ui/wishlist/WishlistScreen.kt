@@ -336,7 +336,7 @@ fun WishlistScreen(
                                     )
                                     IconButton(onClick = { toggleSection("attention") }) {
                                         Icon(
-                                            imageVector = if (sectionExpanded["attention"] ?: true) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                                            imageVector = if (sectionExpanded["attention"] ?: true) Icons.Rounded.ExpandMore else Icons.Rounded.ExpandLess,
                                             contentDescription = if (sectionExpanded["attention"] ?: true) "Collapse attention" else "Expand attention",
                                             tint = extra.muted
                                         )
@@ -362,7 +362,7 @@ fun WishlistScreen(
                             trailing = {
                                 IconButton(onClick = { toggleSection("library") }) {
                                     Icon(
-                                        imageVector = if (sectionExpanded["library"] ?: true) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                                        imageVector = if (sectionExpanded["library"] ?: true) Icons.Rounded.ExpandMore else Icons.Rounded.ExpandLess,
                                         contentDescription = if (sectionExpanded["library"] ?: true) "Collapse library" else "Expand library",
                                         tint = extra.muted
                                     )
@@ -410,7 +410,7 @@ fun WishlistScreen(
                                     )
                                     IconButton(onClick = { toggleSection("attention") }) {
                                         Icon(
-                                            imageVector = if (sectionExpanded["attention"] ?: true) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                                            imageVector = if (sectionExpanded["attention"] ?: true) Icons.Rounded.ExpandMore else Icons.Rounded.ExpandLess,
                                             contentDescription = if (sectionExpanded["attention"] ?: true) "Collapse attention" else "Expand attention",
                                             tint = extra.muted
                                         )
@@ -436,7 +436,7 @@ fun WishlistScreen(
                             trailing = {
                                 IconButton(onClick = { toggleSection("library") }) {
                                     Icon(
-                                        imageVector = if (sectionExpanded["library"] ?: true) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                                        imageVector = if (sectionExpanded["library"] ?: true) Icons.Rounded.ExpandMore else Icons.Rounded.ExpandLess,
                                         contentDescription = if (sectionExpanded["library"] ?: true) "Collapse library" else "Expand library",
                                         tint = extra.muted
                                     )
@@ -484,7 +484,7 @@ fun WishlistScreen(
                                     )
                                     IconButton(onClick = { toggleSection("attention") }) {
                                         Icon(
-                                            imageVector = if (sectionExpanded["attention"] ?: true) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                                            imageVector = if (sectionExpanded["attention"] ?: true) Icons.Rounded.ExpandMore else Icons.Rounded.ExpandLess,
                                             contentDescription = if (sectionExpanded["attention"] ?: true) "Collapse attention" else "Expand attention",
                                             tint = extra.muted
                                         )
@@ -526,7 +526,7 @@ fun WishlistScreen(
                             trailing = {
                                 IconButton(onClick = { toggleSection("library") }) {
                                     Icon(
-                                        imageVector = if (sectionExpanded["library"] ?: true) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                                        imageVector = if (sectionExpanded["library"] ?: true) Icons.Rounded.ExpandMore else Icons.Rounded.ExpandLess,
                                         contentDescription = if (sectionExpanded["library"] ?: true) "Collapse library" else "Expand library",
                                         tint = extra.muted
                                     )
