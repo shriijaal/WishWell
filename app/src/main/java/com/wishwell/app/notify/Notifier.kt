@@ -25,14 +25,23 @@ class Notifier(private val context: Context) {
     private fun createChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val channel = NotificationChannel(
+        val priceChannel = NotificationChannel(
             CHANNEL_ID,
             context.getString(R.string.notification_channel_name),
             NotificationManager.IMPORTANCE_DEFAULT
         ).apply {
             description = context.getString(R.string.notification_channel_description)
         }
-        manager.createNotificationChannel(channel)
+        manager.createNotificationChannel(priceChannel)
+
+        val backupChannel = NotificationChannel(
+            BACKUP_CHANNEL_ID,
+            context.getString(R.string.backup_channel_name),
+            NotificationManager.IMPORTANCE_DEFAULT
+        ).apply {
+            description = context.getString(R.string.backup_channel_description)
+        }
+        manager.createNotificationChannel(backupChannel)
     }
 
     fun notifyPriceChange(
@@ -90,8 +99,58 @@ class Notifier(private val context: Context) {
         }
     }
 
+    fun notifyBackupStarted() {
+        notifyBackup("Backing up…", "Wishwell is saving your items and price history.", inProgress = true)
+    }
+
+    fun notifyBackupCompleted(path: String) {
+        val fileName = path.substringAfterLast("/")
+        notifyBackup("Backup complete", "Saved to $fileName", inProgress = false)
+    }
+
+    fun notifyBackupFailed(message: String) {
+        notifyBackup("Backup failed", message, inProgress = false)
+    }
+
+    private fun notifyBackup(title: String, body: String, inProgress: Boolean) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) return
+
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            NOTIFICATION_ID_BACKUP,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val builder = NotificationCompat.Builder(context, BACKUP_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat_wishwell)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setAutoCancel(!inProgress)
+            .setContentIntent(pendingIntent)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setOngoing(inProgress)
+
+        if (inProgress) {
+            builder.setProgress(100, 0, true)
+        }
+
+        runCatching {
+            NotificationManagerCompat.from(context).notify(NOTIFICATION_ID_BACKUP, builder.build())
+        }
+    }
+
     companion object {
         const val CHANNEL_ID = "price_alerts"
+        const val BACKUP_CHANNEL_ID = "backup_notifications"
         const val EXTRA_ITEM_ID = "com.wishwell.app.extra.ITEM_ID"
+        private const val NOTIFICATION_ID_BACKUP = 1000
     }
 }

@@ -45,7 +45,7 @@ class WorkScheduler(private val context: Context) {
             .build()
 
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-            UNIQUE_WORK_NAME,
+            PRICE_CHECK_WORK_NAME,
             ExistingPeriodicWorkPolicy.UPDATE,
             request
         )
@@ -62,7 +62,16 @@ class WorkScheduler(private val context: Context) {
         WorkManager.getInstance(context).enqueue(request)
     }
 
+    /** Schedules or cancels automatic backups based on frequency. */
+    fun scheduleAutoBackup(frequency: String) {
+        BackupWorker.schedule(context, frequency)
+    }
+
+    fun cancelAutoBackup() {
+        BackupWorker.cancel(context)
+    }
+
     companion object {
-        private const val UNIQUE_WORK_NAME = "wishwell_price_check"
+        const val PRICE_CHECK_WORK_NAME = "wishwell_price_check"
     }
 }

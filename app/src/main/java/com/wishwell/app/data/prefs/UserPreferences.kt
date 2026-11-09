@@ -28,6 +28,13 @@ class UserPreferences(private val context: Context) {
         val NAVBAR_GLASS_GLOW = booleanPreferencesKey("navbar_glass_glow")
         val ACCENT_COLOR = stringPreferencesKey("accent_color")
         val READ_NOTIFICATION_KEYS = stringSetPreferencesKey("read_notification_keys")
+
+        // Backup settings
+        val BACKUP_LOCATION = stringPreferencesKey("backup_location")
+        val BACKUP_LOCATION_URI = stringPreferencesKey("backup_location_uri")
+        val AUTO_BACKUP_FREQUENCY = stringPreferencesKey("auto_backup_frequency")
+        val LAST_BACKUP_AT = longPreferencesKey("last_backup_at")
+        val BACKUP_FILE_PATHS = stringSetPreferencesKey("backup_file_paths")
     }
 
     val refreshIntervalHours: Flow<Int> =
@@ -64,6 +71,26 @@ class UserPreferences(private val context: Context) {
 
     val readNotificationKeys: Flow<Set<String>> =
         context.dataStore.data.map { it[Keys.READ_NOTIFICATION_KEYS] ?: emptySet() }
+
+    // ---- Backup preferences ----
+
+    /** Where backups are written: "app_internal" or "user_picked". */
+    val backupLocation: Flow<String> =
+        context.dataStore.data.map { it[Keys.BACKUP_LOCATION] ?: "app_internal" }
+
+    /** Persisted SAF URI for user-picked location (may be null). */
+    val backupLocationUri: Flow<String?> =
+        context.dataStore.data.map { it[Keys.BACKUP_LOCATION_URI] }
+
+    /** Auto backup frequency: "off", "daily", "weekly", "monthly". */
+    val autoBackupFrequency: Flow<String> =
+        context.dataStore.data.map { it[Keys.AUTO_BACKUP_FREQUENCY] ?: "off" }
+
+    val lastBackupAt: Flow<Long?> =
+        context.dataStore.data.map { it[Keys.LAST_BACKUP_AT] }
+
+    val backupFilePaths: Flow<Set<String>> =
+        context.dataStore.data.map { it[Keys.BACKUP_FILE_PATHS] ?: emptySet() }
 
     suspend fun setRefreshInterval(hours: Int) {
         context.dataStore.edit { it[Keys.REFRESH_HOURS] = hours }
@@ -106,6 +133,42 @@ class UserPreferences(private val context: Context) {
         context.dataStore.edit { prefs ->
             val current = prefs[Keys.READ_NOTIFICATION_KEYS] ?: emptySet()
             prefs[Keys.READ_NOTIFICATION_KEYS] = current + keys
+        }
+    }
+
+    // ---- Backup preference setters ----
+
+    suspend fun setBackupLocation(location: String, uri: String? = null) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.BACKUP_LOCATION] = location
+            if (uri == null) {
+                prefs.remove(Keys.BACKUP_LOCATION_URI)
+            } else {
+                prefs[Keys.BACKUP_LOCATION_URI] = uri
+            }
+        }
+    }
+
+    suspend fun setAutoBackupFrequency(frequency: String) {
+        context.dataStore.edit { it[Keys.AUTO_BACKUP_FREQUENCY] = frequency }
+    }
+
+    suspend fun setLastBackupAt(epochMillis: Long) {
+        context.dataStore.edit { it[Keys.LAST_BACKUP_AT] = epochMillis }
+    }
+
+    suspend fun recordBackupFile(path: String) {
+        context.dataStore.edit { prefs ->
+            val current = prefs[Keys.BACKUP_FILE_PATHS] ?: emptySet()
+            val updated = (current.toList() + path).takeLast(50).toSet()
+            prefs[Keys.BACKUP_FILE_PATHS] = updated
+        }
+    }
+
+    suspend fun removeBackupFilePath(path: String) {
+        context.dataStore.edit { prefs ->
+            val current = prefs[Keys.BACKUP_FILE_PATHS] ?: emptySet()
+            prefs[Keys.BACKUP_FILE_PATHS] = current - path
         }
     }
 }

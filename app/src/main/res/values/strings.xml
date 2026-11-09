@@ -6,4 +6,6 @@
     <string name="widget_wishlist_description">Shows your saved wishlist items and prices.</string>
     <string name="widget_price_drops_label">Price drops</string>
     <string name="widget_price_drops_description">Shows wishlisted items that are on sale or at an all-time low.</string>
+    <string name="backup_channel_name">Backups</string>
+    <string name="backup_channel_description">Notifications when automatic backups run.</string>
 </resources>

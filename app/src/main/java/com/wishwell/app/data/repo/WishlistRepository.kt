@@ -1,6 +1,8 @@
 package com.wishwell.app.data.repo
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import com.wishwell.app.data.db.CategoryDao
 import com.wishwell.app.data.db.ItemDao
 import com.wishwell.app.data.model.Category
@@ -23,7 +25,17 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
+import java.io.InputStream
+import java.io.OutputStream
 import java.net.URI
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import kotlin.io.path.exists
+import kotlin.io.path.readBytes
+import kotlin.io.path.writeBytes
 import kotlin.math.abs
 
 data class NewItemDraft(
@@ -1002,5 +1014,122 @@ class WishlistRepository(
         if (!o.has(key) || o.isNull(key)) return null
         val d = o.optDouble(key, Double.NaN)
         return d.takeIf { it.isFinite() }
+    }
+
+    // =====================================================================
+    // Backup & restore (file-based)
+    // =====================================================================
+
+    /** Returns the backup root directory based on the persisted location preference. */
+    private suspend fun backupDir(): File {
+        val location = prefs.backupLocation.first()
+        return when (location) {
+            "user_picked" -> {
+                prefs.backupLocationUri.first()?.let { uriString ->
+                    val uri = Uri.parse(uriString)
+                    appContext.contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                    )
+                    File(uri.path ?: appContext.filesDir.absolutePath + "/backups")
+                } ?: File(appContext.filesDir, "backups")
+            }
+            else -> File(appContext.filesDir, "backups")
+        }.apply { mkdirs() }
+    }
+
+    /** Builds a timestamped backup file name. */
+    private fun backupFileName(): String =
+        "WishWell_Backup_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}.json"
+
+    /** Rotates stored backup paths, keeping only the most recent 3. Deletes excess files. */
+    private suspend fun rotateBackups() {
+        val paths = prefs.backupFilePaths.first().toMutableList()
+        val kept = paths.sortedDescending().take(3)
+        val removed = paths - kept
+        removed.forEach { path ->
+            runCatching { File(path).delete() }
+            prefs.removeBackupFilePath(path)
+        }
+    }
+
+    /**
+     * Writes a backup JSON file to the configured location, records it, and rotates old backups
+     * so only the most recent 3 are kept. Returns the absolute path of the written file.
+     */
+    suspend fun backupToFile(): String = withContext(Dispatchers.IO) {
+        val json = exportBackupJson()
+        val dir = backupDir()
+        val file = File(dir, backupFileName())
+        file.writeBytes(json.toByteArray(Charsets.UTF_8))
+
+        val absolutePath = file.absolutePath
+        prefs.recordBackupFile(absolutePath)
+        prefs.setLastBackupAt(System.currentTimeMillis())
+        rotateBackups()
+        absolutePath
+    }
+
+    /**
+     * Reads a backup file from a content URI and imports it. Returns the import result.
+     * Caller is responsible for picking the URI via SAF.
+     */
+    suspend fun restoreFromFile(uri: Uri): BackupImportResult = withContext(Dispatchers.IO) {
+        appContext.contentResolver.takePersistableUriPermission(
+            uri,
+            Intent.FLAG_GRANT_READ_URI_PERMISSION
+        )
+        val input: InputStream = appContext.contentResolver.openInputStream(uri)
+            ?: error("Couldn't open the selected backup file.")
+        val text = input.bufferedReader().use { it.readText() }
+        val result = importBackupJson(text)
+        prefs.recordBackupFile(uri.toString())
+        rotateBackups()
+        result
+    }
+
+    /** Lists all backup files currently known (existing files only). */
+    suspend fun listBackupFiles(): List<File> = withContext(Dispatchers.IO) {
+        val dir = backupDir()
+        val known = prefs.backupFilePaths.first()
+        val files = known.mapNotNull { path ->
+            val f = File(path)
+            if (f.exists()) f else null
+        }
+        // Also scan the directory for any backup files not yet tracked
+        val dirFiles = dir.listFiles()
+            ?.filter { it.name.startsWith("WishWell_Backup_") && it.name.endsWith(".json") }
+            ?.filter { !known.contains(it.absolutePath) }
+            .orEmpty()
+        (files + dirFiles).sortedByDescending { it.lastModified() }.distinctBy { it.absolutePath }
+    }
+
+    /** Deletes a backup file and removes it from the tracked paths. */
+    suspend fun deleteBackupFile(path: String) = withContext(Dispatchers.IO) {
+        runCatching { File(path).delete() }
+        prefs.removeBackupFilePath(path)
+    }
+
+    /**
+     * Storage usage summary for the settings screen.
+     */
+    data class StorageUsage(
+        val databaseBytes: Long,
+        val itemCount: Int,
+        val categoryCount: Int,
+        val pricePointCount: Int,
+        val backupBytes: Long,
+        val backupCount: Int
+    )
+
+    suspend fun getStorageUsage(): StorageUsage = withContext(Dispatchers.IO) {
+        val dbFile = File(appContext.filesDir, "wishwell.db")
+        val dbBytes = if (dbFile.exists()) dbFile.length() else 0L
+        val itemCount = itemDao.count()
+        val categoryCount = categoryDao.count()
+        val pricePointCount = itemDao.getAllPoints().size
+        val backups = listBackupFiles()
+        val backupBytes = backups.sumOf { it.length() }
+        StorageUsage(dbBytes, itemCount, categoryCount, pricePointCount, backupBytes, backups.size)
     }
 }

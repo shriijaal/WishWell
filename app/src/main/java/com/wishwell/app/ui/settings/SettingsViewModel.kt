@@ -1,14 +1,18 @@
 package com.wishwell.app.ui.settings
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.wishwell.app.data.repo.WishlistRepository
 import com.wishwell.app.di.AppContainer
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class SettingsUiState(
     val refreshHours: Int = 12,
@@ -23,7 +27,12 @@ data class SettingsUiState(
     val itemCount: Int = 0,
     val refreshing: Boolean = false,
     val message: String? = null,
-    val loaded: Boolean = false
+    val loaded: Boolean = false,
+    // Backup state
+    val backupLocation: String = "app_internal",
+    val autoBackupFrequency: String = "off",
+    val lastBackupAt: Long? = null,
+    val backupFileCount: Int = 0
 )
 
 private data class PrefsSnapshot(
@@ -34,7 +43,9 @@ private data class PrefsSnapshot(
     val defaultCurrency: String,
     val accentColor: String,
     val navbarStyle: String,
-    val navbarGlassGlow: Boolean
+    val navbarGlassGlow: Boolean,
+    val backupLocation: String,
+    val autoBackupFrequency: String
 )
 
 private data class StatusSnapshot(
@@ -50,6 +61,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     private val refreshing = MutableStateFlow(false)
     private val message = MutableStateFlow<String?>(null)
+    private val storageUsage = MutableStateFlow<WishlistRepository.StorageUsage?>(null)
 
     private val prefsCore1 = combine(
         prefs.refreshIntervalHours,
@@ -65,7 +77,12 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     private val navPrefs = combine(prefs.navbarStyle, prefs.navbarGlassGlow) { style, glow -> style to glow }
 
-    private val prefsSnapshot = combine(prefsCore1, prefsCore2, navPrefs) { c1, c2, nav ->
+    private val backupPrefs = combine(
+        prefs.backupLocation,
+        prefs.autoBackupFrequency
+    ) { location, frequency -> location to frequency }
+
+    private val prefsSnapshot = combine(prefsCore1, prefsCore2, navPrefs, backupPrefs) { c1, c2, nav, bk ->
         PrefsSnapshot(
             refreshHours = c1.first,
             notificationsEnabled = c1.second,
@@ -74,7 +91,9 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             defaultCurrency = c2.second,
             accentColor = c2.third,
             navbarStyle = nav.first,
-            navbarGlassGlow = nav.second
+            navbarGlassGlow = nav.second,
+            backupLocation = bk.first,
+            autoBackupFrequency = bk.second
         )
     }
 
@@ -89,8 +108,10 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     val state: StateFlow<SettingsUiState> = combine(
         prefsSnapshot,
         statusSnapshot,
-        prefs.lastRefreshAt
-    ) { p, s, lastRefresh ->
+        prefs.lastRefreshAt,
+        prefs.lastBackupAt,
+        prefs.backupFilePaths
+    ) { p, s, lastRefresh, lastBackup, backupPaths ->
         SettingsUiState(
             refreshHours = p.refreshHours,
             notificationsEnabled = p.notificationsEnabled,
@@ -104,13 +125,26 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             itemCount = s.itemCount,
             refreshing = s.refreshing,
             message = s.message,
-            loaded = true
+            loaded = true,
+            backupLocation = p.backupLocation,
+            autoBackupFrequency = p.autoBackupFrequency,
+            lastBackupAt = lastBackup,
+            backupFileCount = backupPaths.size
         )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = SettingsUiState()
     )
+
+    val storageUsageState: StateFlow<WishlistRepository.StorageUsage?> = storageUsage
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = null
+        )
+
+    // ---------------------------------------------------------------- preferences
 
     fun setRefreshInterval(hours: Int) {
         viewModelScope.launch {
@@ -146,6 +180,35 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     fun setNavbarGlassGlow(enabled: Boolean) {
         viewModelScope.launch { prefs.setNavbarGlassGlow(enabled) }
     }
+
+    // ---------------------------------------------------------------- backup
+
+    fun setBackupLocation(location: String, uri: String? = null) {
+        viewModelScope.launch { prefs.setBackupLocation(location, uri) }
+        if (location == "app_internal") {
+            container.scheduler.cancelAutoBackup()
+        } else {
+            container.scheduler.scheduleAutoBackup(state.value.autoBackupFrequency)
+        }
+    }
+
+    fun setAutoBackupFrequency(frequency: String) {
+        viewModelScope.launch {
+            prefs.setAutoBackupFrequency(frequency)
+            container.scheduler.scheduleAutoBackup(frequency)
+        }
+    }
+
+    fun loadStorageUsage() {
+        viewModelScope.launch {
+            val usage = withContext(Dispatchers.IO) {
+                repo.getStorageUsage()
+            }
+            storageUsage.value = usage
+        }
+    }
+
+    // ---------------------------------------------------------------- existing
 
     fun refreshNow() {
         if (refreshing.value) return
@@ -186,5 +249,12 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun reportMessage(text: String) {
         message.value = text
+    }
+
+    fun formatBytes(bytes: Long): String {
+        if (bytes < 1024) return "$bytes B"
+        if (bytes < 1024 * 1024) return "%.1f KB".format(bytes / 1024.0)
+        if (bytes < 1024L * 1024 * 1024) return "%.1f MB".format(bytes / (1024.0 * 1024))
+        return "%.1f GB".format(bytes / (1024.0 * 1024 * 1024))
     }
 }

@@ -1,5 +1,6 @@
 package com.wishwell.app.ui.settings
 
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -38,6 +39,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -91,6 +93,10 @@ fun SettingsScreen(container: AppContainer) {
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showCustomPicker by remember { mutableStateOf(false) }
     var backupBusy by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        viewModel.loadStorageUsage()
+    }
 
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
@@ -152,6 +158,19 @@ fun SettingsScreen(container: AppContainer) {
                     onFailure = { it.message ?: "Couldn't import backup." }
                 )
             )
+        }
+    }
+
+    val pickFolderLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            context.contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+            viewModel.setBackupLocation("user_picked", uri.toString())
         }
     }
 
@@ -547,7 +566,7 @@ fun SettingsScreen(container: AppContainer) {
                     modifier = Modifier.weight(1f),
                     border = BorderStroke(1.dp, extra.hairline)
                 ) {
-                    Text(if (backupBusy) "Working…" else "Export", color = if (backupBusy) extra.muted else colors.onSurface)
+                    Text(if (backupBusy) "Working…" else "Backup now", color = if (backupBusy) extra.muted else colors.onSurface)
                 }
                 OutlinedButton(
                     onClick = { importLauncher.launch(arrayOf("application/json", "text/*", "*/*")) },
@@ -556,7 +575,7 @@ fun SettingsScreen(container: AppContainer) {
                     modifier = Modifier.weight(1f),
                     border = BorderStroke(1.dp, extra.hairline)
                 ) {
-                    Text(if (backupBusy) "Working…" else "Import", color = if (backupBusy) extra.muted else colors.onSurface)
+                    Text(if (backupBusy) "Working…" else "Restore from backup", color = if (backupBusy) extra.muted else colors.onSurface)
                 }
             }
             Spacer(Modifier.height(8.dp))
@@ -582,6 +601,167 @@ fun SettingsScreen(container: AppContainer) {
                     color = colors.error,
                     fontWeight = FontWeight.Medium
                 )
+            }
+        }
+
+        Spacer(Modifier.height(18.dp))
+        SectionLabel("Backup & storage")
+        Spacer(Modifier.height(10.dp))
+        SettingsCard {
+            // Backup location
+            Text(
+                text = "Backup location",
+                style = MaterialTheme.typography.titleSmall,
+                color = colors.onSurface
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = "Choose where automatic backups are written.",
+                style = MaterialTheme.typography.bodySmall,
+                color = extra.muted
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = if (state.backupLocation == "app_internal") "App internal storage" else "Picked folder",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = colors.onSurface
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = if (state.backupLocation == "app_internal") "Private to this app (auto-rotates last 3)" else "Picked folder",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = extra.muted
+                        )
+                }
+                Spacer(Modifier.width(10.dp))
+                OutlinedButton(
+                    onClick = {
+                        if (state.backupLocation == "user_picked") {
+                            pickFolderLauncher.launch(null)
+                        } else {
+                            viewModel.setBackupLocation("user_picked")
+                        }
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, extra.hairline)
+                ) {
+                    Text(
+                        text = if (state.backupLocation == "user_picked") "Change folder" else "Pick folder",
+                        color = colors.onSurface
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+            androidx.compose.material3.HorizontalDivider(color = extra.hairline.copy(alpha = 0.8f))
+            Spacer(Modifier.height(12.dp))
+
+            // Auto backup frequency
+            Text(
+                text = "Auto-backup frequency",
+                style = MaterialTheme.typography.titleSmall,
+                color = colors.onSurface
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = "Wishwell runs a background backup on the schedule you choose.",
+                style = MaterialTheme.typography.bodySmall,
+                color = extra.muted
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(
+                    "off" to "Off",
+                    "daily" to "Daily",
+                    "weekly" to "Weekly",
+                    "monthly" to "Monthly"
+                ).forEach { (key, label) ->
+                    WishPill(
+                        text = label,
+                        selected = state.autoBackupFrequency == key,
+                        onClick = { viewModel.setAutoBackupFrequency(key) }
+                    )
+                }
+            }
+
+            state.lastBackupAt?.let { lastBackup ->
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "Last backup: ${formatDateWithYear(lastBackup)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = extra.muted
+                )
+            }
+        }
+
+        Spacer(Modifier.height(18.dp))
+        SectionLabel("Storage usage")
+        Spacer(Modifier.height(10.dp))
+        SettingsCard {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                val usage by viewModel.storageUsageState.collectAsStateWithLifecycle(null)
+
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "App database",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = colors.onSurface
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            text = "${usage?.itemCount ?: 0} items · ${usage?.categoryCount ?: 0} categories · ${usage?.pricePointCount ?: 0} price points",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = extra.muted
+                        )
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        text = usage?.let { viewModel.formatBytes(it.databaseBytes) } ?: "–",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = colors.onSurface
+                    )
+                }
+
+                Spacer(Modifier.height(8.dp))
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Backups",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = colors.onSurface
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            text = "${usage?.backupCount ?: 0} backup file${if (usage?.backupCount != 1) "s" else ""} kept (last 3)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = extra.muted
+                        )
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        text = usage?.let { viewModel.formatBytes(it.backupBytes) } ?: "–",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = colors.onSurface
+                    )
+                }
+
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = { viewModel.loadStorageUsage() },
+                        shape = CircleShape,
+                        modifier = Modifier.weight(1f),
+                        border = BorderStroke(1.dp, extra.hairline)
+                    ) {
+                        Text("Refresh", color = colors.onSurface)
+                    }
+                }
             }
         }
 
