@@ -37,12 +37,18 @@
             android:exported="false"
             android:theme="@style/Theme.Wishwell" />
 
+        <activity
+            android:name=".widget.WidgetConfigureActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Wishwell" />
+
         <receiver
             android:name=".widget.WishlistedItemsWidgetReceiver"
             android:exported="true"
             android:label="@string/widget_wishlist_label">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.appwidget.action.APPWIDGET_OPTION_CHANGED" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
@@ -55,6 +61,7 @@
             android:label="@string/widget_price_drops_label">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.appwidget.action.APPWIDGET_OPTION_CHANGED" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
