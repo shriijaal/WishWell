@@ -91,7 +91,8 @@ class WishlistRepository(
         runCatching { WishwellWidgetUpdater.updateAll(appContext) }
     }
 
-    fun observeItems(): Flow<List<ItemWithStats>> = itemDao.observeActiveItems()
+    fun observeItems(includePurchased: Boolean = false): Flow<List<ItemWithStats>> =
+        if (includePurchased) itemDao.observeAllItems() else itemDao.observeActiveItems()
 
     fun observeItemTags(): Flow<List<ItemCategoryTag>> = itemDao.observeItemTags()
 
@@ -209,6 +210,19 @@ class WishlistRepository(
     suspend fun setNotes(id: Long, notes: String) = withContext(Dispatchers.IO) {
         val item = itemDao.getById(id) ?: return@withContext
         itemDao.update(item.copy(notes = notes.trim().take(600), updatedAt = System.currentTimeMillis()))
+        notifyWidgetsChanged()
+    }
+
+    suspend fun markItemPurchased(id: Long, purchased: Boolean) = withContext(Dispatchers.IO) {
+        val item = itemDao.getById(id) ?: return@withContext
+        val now = System.currentTimeMillis()
+        itemDao.update(
+            item.copy(
+                isPurchased = purchased,
+                purchasedAt = if (purchased) now else null,
+                updatedAt = now
+            )
+        )
         notifyWidgetsChanged()
     }
 
@@ -834,6 +848,8 @@ class WishlistRepository(
                 })
                 .put("brand", item.brand)
                 .put("isArchived", item.isArchived)
+                .put("isPurchased", item.isPurchased)
+                .put("purchasedAt", item.purchasedAt)
                 .put("inStock", item.inStock)
                 .put("createdAt", item.createdAt)
                 .put("updatedAt", item.updatedAt)
@@ -992,6 +1008,8 @@ class WishlistRepository(
                 specsJson = WishItem.encodeSpecs(specs),
                 brand = o.optString("brand").takeIf { it.isNotBlank() && it != "null" }?.trim()?.take(80),
                 isArchived = o.optBoolean("isArchived", false),
+                isPurchased = o.optBoolean("isPurchased", false),
+                purchasedAt = o.optLong("purchasedAt", 0L).takeIf { it > 0L },
                 inStock = if (o.has("inStock") && !o.isNull("inStock")) o.optBoolean("inStock") else null,
                 createdAt = createdAt,
                 updatedAt = updatedAt,

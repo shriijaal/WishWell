@@ -33,11 +33,13 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.Done
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.ShoppingBag
 import androidx.compose.material.icons.rounded.TrendingDown
 import androidx.compose.material.icons.rounded.TrendingUp
 import androidx.compose.material.icons.rounded.ViewCarousel
@@ -81,7 +83,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.compose.viewModel as composeViewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import android.webkit.WebView
@@ -126,28 +128,28 @@ fun ItemDetailRoute(
     onTrackProduct: (String) -> Unit = {},
     onEdit: () -> Unit = {}
 ) {
-    val viewModel: ItemDetailViewModel = viewModel(
+    val vm: ItemDetailViewModel = composeViewModel(
         key = "detail-$itemId",
         factory = viewModelFactory {
             initializer { ItemDetailViewModel(container, itemId) }
         }
     )
-    val item by viewModel.item.collectAsStateWithLifecycle()
-    val categoryIds by viewModel.categoryIds.collectAsStateWithLifecycle()
-    val history by viewModel.history.collectAsStateWithLifecycle()
-    val categories by viewModel.categories.collectAsStateWithLifecycle()
-    val similar by viewModel.similar.collectAsStateWithLifecycle()
-    val comparisons by viewModel.comparisons.collectAsStateWithLifecycle()
-    val crossStoreMatches by viewModel.crossStoreMatches.collectAsStateWithLifecycle()
-    val compareStates by viewModel.compareStates.collectAsStateWithLifecycle()
-    val busy by viewModel.busy.collectAsStateWithLifecycle()
-    val message by viewModel.message.collectAsStateWithLifecycle()
+    val item by vm.item.collectAsStateWithLifecycle()
+    val categoryIds by vm.categoryIds.collectAsStateWithLifecycle()
+    val history by vm.history.collectAsStateWithLifecycle()
+    val categories by vm.categories.collectAsStateWithLifecycle()
+    val similar by vm.similar.collectAsStateWithLifecycle()
+    val comparisons by vm.comparisons.collectAsStateWithLifecycle()
+    val crossStoreMatches by vm.crossStoreMatches.collectAsStateWithLifecycle()
+    val compareStates by vm.compareStates.collectAsStateWithLifecycle()
+    val busy by vm.busy.collectAsStateWithLifecycle()
+    val message by vm.message.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(message) {
         message?.let {
             snackbarHostState.showSnackbar(it)
-            viewModel.clearMessage()
+            vm.clearMessage()
         }
     }
 
@@ -181,15 +183,16 @@ fun ItemDetailRoute(
         onOpenItem = onOpenItem,
         onTrackProduct = onTrackProduct,
         onEdit = onEdit,
-        onFindProducts = viewModel::findStoreProducts,
-        onSearchAllStores = viewModel::searchAllStores,
-        onRefresh = viewModel::refresh,
-        onSetTarget = viewModel::setTargetPrice,
-        onSetCategory = viewModel::setCategory,
-        onSetNotes = viewModel::setNotes,
-        onDelete = { viewModel.delete(onBack) },
-        parsePrice = viewModel::parsePrice,
-        onImportHistory = viewModel::importHistory
+        onFindProducts = vm::findStoreProducts,
+        onSearchAllStores = vm::searchAllStores,
+        onRefresh = vm::refresh,
+        onSetTarget = vm::setTargetPrice,
+        onSetCategory = vm::setCategory,
+        onSetNotes = vm::setNotes,
+        onDelete = { vm.delete(onBack) },
+        parsePrice = vm::parsePrice,
+        onImportHistory = vm::importHistory,
+        onTogglePurchased = { purchased -> vm.togglePurchased(purchased) }
     )
 }
 
@@ -218,7 +221,8 @@ private fun ItemDetailContent(
     onSetNotes: (String) -> Unit,
     onDelete: () -> Unit,
     parsePrice: (String) -> Double?,
-    onImportHistory: (String) -> Unit
+    onImportHistory: (String) -> Unit,
+    onTogglePurchased: (Boolean) -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
     val extra = LocalWishExtraColors.current
@@ -382,6 +386,20 @@ private fun ItemDetailContent(
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                         )
                     }
+                }
+                Spacer(Modifier.width(8.dp))
+                IconButton(
+                    onClick = {
+                        val currently = item?.isPurchased == true
+                        onTogglePurchased(!currently)
+                    }
+                ) {
+                    Icon(
+                        imageVector = if (item?.isPurchased == true) Icons.Rounded.Done else Icons.Rounded.ShoppingBag,
+                        contentDescription = if (item?.isPurchased == true) "Mark not bought" else "Mark bought",
+                        tint = if (item?.isPurchased == true) colors.primary else extra.muted,
+                        modifier = Modifier.size(20.dp)
+                    )
                 }
             }
 

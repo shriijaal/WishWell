@@ -29,11 +29,14 @@ private const val ITEMS_WITH_STATS = """
 @Dao
 interface ItemDao {
 
-    @Query("$ITEMS_WITH_STATS WHERE i.isArchived = 0 ORDER BY i.createdAt DESC")
+    @Query("$ITEMS_WITH_STATS WHERE i.isArchived = 0 AND i.isPurchased = 0 ORDER BY i.createdAt DESC")
     fun observeActiveItems(): Flow<List<ItemWithStats>>
 
     @Query("$ITEMS_WITH_STATS WHERE i.id = :id")
     fun observeItem(id: Long): Flow<ItemWithStats?>
+
+    @Query("$ITEMS_WITH_STATS ORDER BY i.createdAt DESC")
+    fun observeAllItems(): Flow<List<ItemWithStats>>
 
     @Query("$ITEMS_WITH_STATS ORDER BY i.createdAt DESC")
     suspend fun getAllWithStats(): List<ItemWithStats>

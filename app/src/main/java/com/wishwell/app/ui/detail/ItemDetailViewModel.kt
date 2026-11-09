@@ -34,6 +34,13 @@ class ItemDetailViewModel(
     val item: StateFlow<ItemWithStats?> = repo.observeItem(itemId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    fun togglePurchased(purchased: Boolean) {
+        viewModelScope.launch {
+            runCatching { repo.markItemPurchased(itemId, purchased) }
+                .onFailure { /* surface via a message channel if desired */ }
+        }
+    }
+
     /** This item's category tags, from the junction table. */
     val categoryIds: StateFlow<Set<Long>> = repo.observeItemTags()
         .map { tags -> tags.filter { it.itemId == itemId }.map { it.categoryId }.toSet() }

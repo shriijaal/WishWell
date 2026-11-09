@@ -75,6 +75,10 @@ data class WishItem(
     val specsJson: String = "[]",
     val brand: String? = null,
     val isArchived: Boolean = false,
+    /** Whether the item has been bought. Purchased items are hidden from the active list by default. */
+    val isPurchased: Boolean = false,
+    /** Timestamp when the item was marked as bought. */
+    val purchasedAt: Long? = null,
     /** Best-effort stock state: true = in stock, false = out of stock, null = unknown. */
     val inStock: Boolean? = null,
     val createdAt: Long = System.currentTimeMillis(),

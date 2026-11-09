@@ -46,10 +46,12 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Checkroom
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Done
 import androidx.compose.material.icons.rounded.Devices
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FitnessCenter
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.ShoppingBag
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -473,13 +475,15 @@ fun WishCard(
     modifier: Modifier = Modifier,
     selected: Boolean = false,
     selectionMode: Boolean = false,
-    onLongClick: (() -> Unit)? = null
+    onLongClick: (() -> Unit)? = null,
+    onTogglePurchased: (() -> Unit)? = null
 ) {
     val colors = MaterialTheme.colorScheme
     val extra = LocalWishExtraColors.current
     val price = item.price
     val listPrice = item.item.listPrice
     val belowTarget = item.item.targetPrice?.let { t -> price != null && price <= t + 0.005 } == true
+    val isPurchased = item.item.isPurchased
     val borderColor = when {
         selected -> colors.primary
         else -> extra.hairline
@@ -532,6 +536,35 @@ fun WishCard(
                         }
                     }
                 }
+                if (!selectionMode && onTogglePurchased != null) {
+                    Box(
+                        modifier = Modifier
+                            .padding(top = 4.dp, start = 4.dp)
+                    ) {
+                        IconButton(
+                            onClick = onTogglePurchased,
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isPurchased) Icons.Rounded.Done else Icons.Rounded.ShoppingBag,
+                                contentDescription = if (isPurchased) "Mark not bought" else "Mark bought",
+                                tint = if (isPurchased) colors.primary else extra.muted,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+                if (isPurchased) {
+                    Box(modifier = Modifier.padding(top = 4.dp, end = 4.dp)) {
+                        Icon(
+                            Icons.Rounded.Done,
+                            contentDescription = "Bought",
+                            tint = colors.primary,
+                            modifier = Modifier.size(20.dp)
+                                .background(colors.surface, CircleShape)
+                        )
+                    }
+                }
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -549,6 +582,15 @@ fun WishCard(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f)
                         )
+                        if (isPurchased) {
+                            Spacer(Modifier.width(4.dp))
+                            Icon(
+                                Icons.Rounded.Done,
+                                contentDescription = "Bought",
+                                tint = colors.primary,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
                         val badge = when {
                             item.isAtLowest -> "Low" to BadgeTone.LOW
                             belowTarget -> "Target" to BadgeTone.GOOD
@@ -621,7 +663,8 @@ fun SwipeableWishCard(
     onLongClick: (() -> Unit)? = null,
     swipeEnabled: Boolean = true,
     isRevealed: Boolean = false,
-    onRevealedChange: (Boolean) -> Unit = {}
+    onRevealedChange: (Boolean) -> Unit = {},
+    onTogglePurchased: (() -> Unit)? = null
 ) {
     val colors = MaterialTheme.colorScheme
     val extra = LocalWishExtraColors.current
@@ -731,6 +774,7 @@ fun SwipeableWishCard(
             selected = selected,
             selectionMode = selectionMode,
             onLongClick = onLongClick,
+            onTogglePurchased = onTogglePurchased,
             modifier = Modifier
                 .fillMaxWidth()
                 .offset { IntOffset(offsetX.value.roundToInt(), 0) }

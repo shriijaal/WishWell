@@ -41,6 +41,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Done
 import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.material.icons.rounded.DriveFileMove
 import androidx.compose.material.icons.rounded.ExpandMore
@@ -48,6 +49,7 @@ import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.LocalOffer
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.ShoppingBag
 import androidx.compose.material.icons.rounded.Storefront
 import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material.icons.rounded.ViewCarousel
@@ -104,7 +106,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.compose.viewModel as composeViewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.wishwell.app.data.model.Category
@@ -138,12 +140,12 @@ fun WishlistScreen(
     onEditItem: (Long) -> Unit,
     onSelectionModeChanged: (Boolean) -> Unit = {}
 ) {
-    val viewModel: WishlistViewModel = viewModel(
+    val vm: WishlistViewModel = composeViewModel(
         factory = viewModelFactory {
             initializer { WishlistViewModel(container) }
         }
     )
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val state by vm.uiState.collectAsStateWithLifecycle()
     val extra = LocalWishExtraColors.current
     var viewMode by remember { mutableStateOf("list") } // list, grid, carousel
     val sectionExpanded = remember { mutableStateMapOf<String, Boolean>() }
@@ -154,7 +156,7 @@ fun WishlistScreen(
     val pullState = rememberPullToRefreshState()
     LaunchedEffect(state.selectionMode) { onSelectionModeChanged(state.selectionMode) }
     if (pullState.isRefreshing) {
-        LaunchedEffect(Unit) { viewModel.refreshAll() }
+        LaunchedEffect(Unit) { vm.refreshAll() }
     }
     LaunchedEffect(state.refreshing) {
         if (state.refreshing) pullState.startRefresh() else pullState.endRefresh()
@@ -202,7 +204,7 @@ fun WishlistScreen(
                     revealedItemId = null
                     onOpenItem(id)
                 },
-                onMarkNotificationsRead = viewModel::markAllNotificationsRead
+                onMarkNotificationsRead = vm::markAllNotificationsRead
             )
         }
 
@@ -212,7 +214,7 @@ fun WishlistScreen(
             item(key = "notice") {
                 NoticeBar(
                     text = notice,
-                    onDismiss = viewModel::clearMessage,
+                    onDismiss = vm::clearMessage,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
                 )
             }
@@ -222,17 +224,18 @@ fun WishlistScreen(
             item(key = "search") {
                 SearchAndSort(
                     state = state,
-                    onQueryChange = viewModel::setQuery,
-                    onSortChange = viewModel::setSort
+                    onQueryChange = vm::setQuery,
+                    onSortChange = vm::setSort
                 )
             }
             item(key = "filters") {
                 FilterBar(
                     state = state,
-                    onCategoryToggle = viewModel::toggleCategory,
-                    onClearStores = viewModel::clearStores,
-                    onStoreToggle = viewModel::toggleStore,
-                    onAttention = viewModel::setAttentionFilter
+                    onCategoryToggle = vm::toggleCategory,
+                    onClearStores = vm::clearStores,
+                    onStoreToggle = vm::toggleStore,
+                    onAttention = vm::setAttentionFilter,
+                    onToggleShowPurchased = vm::toggleShowPurchased
                 )
             }
             item(key = "count") {
@@ -333,7 +336,7 @@ fun WishlistScreen(
                     actionLabel = "Save your first item",
                     onAction = onAddItem,
                     secondaryLabel = "Load a demo list",
-                    onSecondary = viewModel::loadDemoData
+                    onSecondary = vm::loadDemoData
                 )
             }
 
@@ -342,7 +345,7 @@ fun WishlistScreen(
                     title = "No matches",
                     body = "Nothing in your list fits that search, filter, or collection.",
                     actionLabel = "Clear filters",
-                    onAction = viewModel::clearFilters
+                    onAction = vm::clearFilters
                 )
             }
 
@@ -378,8 +381,9 @@ fun WishlistScreen(
                             selectedIds = state.selectedIds,
                             selectionMode = state.selectionMode,
                             onOpenItem = onOpenItem,
-                            onToggleSelection = viewModel::toggleSelection,
-                            onEnterSelection = viewModel::enterSelection,
+                            onToggleSelection = vm::toggleSelection,
+                            onEnterSelection = vm::enterSelection,
+                            onItemPurchasedChanged = { id, purchased -> vm.togglePurchased(id, purchased) },
                             expanded = sectionExpanded[catKey] ?: true
                         )
                     }
@@ -414,8 +418,9 @@ fun WishlistScreen(
                         selectedIds = state.selectedIds,
                         selectionMode = state.selectionMode,
                         onOpenItem = onOpenItem,
-                        onToggleSelection = viewModel::toggleSelection,
-                        onEnterSelection = viewModel::enterSelection,
+                        onToggleSelection = vm::toggleSelection,
+                        onEnterSelection = vm::enterSelection,
+                        onItemPurchasedChanged = { id, purchased -> vm.togglePurchased(id, purchased) },
                         expanded = sectionExpanded["attention"] ?: true
                     )
                     item(key = "section-library") {
@@ -439,8 +444,9 @@ fun WishlistScreen(
                         selectedIds = state.selectedIds,
                         selectionMode = state.selectionMode,
                         onOpenItem = onOpenItem,
-                        onToggleSelection = viewModel::toggleSelection,
-                        onEnterSelection = viewModel::enterSelection,
+                        onToggleSelection = vm::toggleSelection,
+                        onEnterSelection = vm::enterSelection,
+                        onItemPurchasedChanged = { id, purchased -> vm.togglePurchased(id, purchased) },
                         expanded = sectionExpanded["library"] ?: true
                     )
                 } else {
@@ -450,8 +456,9 @@ fun WishlistScreen(
                         selectedIds = state.selectedIds,
                         selectionMode = state.selectionMode,
                         onOpenItem = onOpenItem,
-                        onToggleSelection = viewModel::toggleSelection,
-                        onEnterSelection = viewModel::enterSelection
+                        onToggleSelection = vm::toggleSelection,
+                        onEnterSelection = vm::enterSelection,
+                        onItemPurchasedChanged = { id, purchased -> vm.togglePurchased(id, purchased) }
                     )
                 }
             }
@@ -488,8 +495,9 @@ fun WishlistScreen(
                             selectedIds = state.selectedIds,
                             selectionMode = state.selectionMode,
                             onOpenItem = onOpenItem,
-                            onToggleSelection = viewModel::toggleSelection,
-                            onEnterSelection = viewModel::enterSelection,
+                            onToggleSelection = vm::toggleSelection,
+                            onEnterSelection = vm::enterSelection,
+                            onItemPurchasedChanged = { id, purchased -> vm.togglePurchased(id, purchased) },
                             expanded = sectionExpanded[catKey] ?: true
                         )
                     }
@@ -524,8 +532,9 @@ fun WishlistScreen(
                         selectedIds = state.selectedIds,
                         selectionMode = state.selectionMode,
                         onOpenItem = onOpenItem,
-                        onToggleSelection = viewModel::toggleSelection,
-                        onEnterSelection = viewModel::enterSelection,
+                        onToggleSelection = vm::toggleSelection,
+                        onEnterSelection = vm::enterSelection,
+                        onItemPurchasedChanged = { id, purchased -> vm.togglePurchased(id, purchased) },
                         expanded = sectionExpanded["attention"] ?: true
                     )
                     item(key = "section-library") {
@@ -549,8 +558,9 @@ fun WishlistScreen(
                         selectedIds = state.selectedIds,
                         selectionMode = state.selectionMode,
                         onOpenItem = onOpenItem,
-                        onToggleSelection = viewModel::toggleSelection,
-                        onEnterSelection = viewModel::enterSelection,
+                        onToggleSelection = vm::toggleSelection,
+                        onEnterSelection = vm::enterSelection,
+                        onItemPurchasedChanged = { id, purchased -> vm.togglePurchased(id, purchased) },
                         expanded = sectionExpanded["library"] ?: true
                     )
                 } else {
@@ -560,8 +570,9 @@ fun WishlistScreen(
                         selectedIds = state.selectedIds,
                         selectionMode = state.selectionMode,
                         onOpenItem = onOpenItem,
-                        onToggleSelection = viewModel::toggleSelection,
-                        onEnterSelection = viewModel::enterSelection
+                        onToggleSelection = vm::toggleSelection,
+                        onEnterSelection = vm::enterSelection,
+                        onItemPurchasedChanged = { id, purchased -> vm.togglePurchased(id, purchased) }
                     )
                 }
             }
@@ -600,7 +611,7 @@ fun WishlistScreen(
                                 onClick = {
                                     when {
                                         revealedItemId != null && revealedItemId != id -> revealedItemId = null
-                                        state.selectionMode -> viewModel.toggleSelection(id)
+                                        state.selectionMode -> vm.toggleSelection(id)
                                         else -> onOpenItem(id)
                                     }
                                 },
@@ -610,11 +621,12 @@ fun WishlistScreen(
                                 selectionMode = state.selectionMode,
                                 onLongClick = {
                                     revealedItemId = null
-                                    if (!state.selectionMode) viewModel.enterSelection(id) else viewModel.toggleSelection(id)
+                                    if (!state.selectionMode) vm.enterSelection(id) else vm.toggleSelection(id)
                                 },
                                 swipeEnabled = !state.selectionMode,
                                 isRevealed = revealedItemId == id,
                                 onRevealedChange = { open -> revealedItemId = if (open) id else if (revealedItemId == id) null else revealedItemId },
+                                onTogglePurchased = { vm.togglePurchased(id, !item.item.isPurchased) },
                                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 5.dp)
                             )
                         }
@@ -652,7 +664,7 @@ fun WishlistScreen(
                             onClick = {
                                 when {
                                     revealedItemId != null && revealedItemId != id -> revealedItemId = null
-                                    state.selectionMode -> viewModel.toggleSelection(id)
+                                    state.selectionMode -> vm.toggleSelection(id)
                                     else -> onOpenItem(id)
                                 }
                             },
@@ -662,7 +674,7 @@ fun WishlistScreen(
                             selectionMode = state.selectionMode,
                             onLongClick = {
                                 revealedItemId = null
-                                if (!state.selectionMode) viewModel.enterSelection(id) else viewModel.toggleSelection(id)
+                                if (!state.selectionMode) vm.enterSelection(id) else vm.toggleSelection(id)
                             },
                             swipeEnabled = !state.selectionMode,
                             isRevealed = revealedItemId == id,
@@ -693,7 +705,7 @@ fun WishlistScreen(
                             onClick = {
                                 when {
                                     revealedItemId != null && revealedItemId != id -> revealedItemId = null
-                                    state.selectionMode -> viewModel.toggleSelection(id)
+                                    state.selectionMode -> vm.toggleSelection(id)
                                     else -> onOpenItem(id)
                                 }
                             },
@@ -703,7 +715,7 @@ fun WishlistScreen(
                             selectionMode = state.selectionMode,
                             onLongClick = {
                                 revealedItemId = null
-                                if (!state.selectionMode) viewModel.enterSelection(id) else viewModel.toggleSelection(id)
+                                if (!state.selectionMode) vm.enterSelection(id) else vm.toggleSelection(id)
                             },
                             swipeEnabled = !state.selectionMode,
                             isRevealed = revealedItemId == id,
@@ -720,7 +732,7 @@ fun WishlistScreen(
                             onClick = {
                                 when {
                                     revealedItemId != null && revealedItemId != id -> revealedItemId = null
-                                    state.selectionMode -> viewModel.toggleSelection(id)
+                                    state.selectionMode -> vm.toggleSelection(id)
                                     else -> onOpenItem(id)
                                 }
                             },
@@ -730,7 +742,7 @@ fun WishlistScreen(
                             selectionMode = state.selectionMode,
                             onLongClick = {
                                 revealedItemId = null
-                                if (!state.selectionMode) viewModel.enterSelection(id) else viewModel.toggleSelection(id)
+                                if (!state.selectionMode) vm.enterSelection(id) else vm.toggleSelection(id)
                             },
                             swipeEnabled = !state.selectionMode,
                             isRevealed = revealedItemId == id,
@@ -759,8 +771,8 @@ fun WishlistScreen(
         ) {
             SelectionBar(
                 count = state.selectedIds.size,
-                onCancel = viewModel::clearSelection,
-                onSelectAll = { viewModel.selectAll(state.items.map { it.item.id }) },
+                onCancel = vm::clearSelection,
+                onSelectAll = { vm.selectAll(state.items.map { it.item.id }) },
                 onReorder = { showReorderSheet = true },
                 onMove = { showMoveSheet = true },
                 onRemove = { showBulkDeleteConfirm = true },
@@ -774,7 +786,7 @@ fun WishlistScreen(
                 body = "This saved item will be removed from your wishlist.",
                 confirmLabel = "Remove",
                 onConfirm = {
-                    viewModel.deleteItem(id)
+                    vm.deleteItem(id)
                     pendingDeleteId = null
                 },
                 onDismiss = { pendingDeleteId = null }
@@ -786,7 +798,7 @@ fun WishlistScreen(
                 body = "The selected items will be removed from your wishlist.",
                 confirmLabel = "Remove",
                 onConfirm = {
-                    viewModel.deleteSelected()
+                    vm.deleteSelected()
                     showBulkDeleteConfirm = false
                 },
                 onDismiss = { showBulkDeleteConfirm = false }
@@ -798,7 +810,7 @@ fun WishlistScreen(
                 selectedItemIds = state.selectedIds,
                 tagMap = state.tagMap,
                 onSave = { categoryIds ->
-                    viewModel.moveSelectedToCategory(categoryIds)
+                    vm.moveSelectedToCategory(categoryIds)
                     showMoveSheet = false
                 },
                 onDismiss = { showMoveSheet = false }
@@ -808,11 +820,11 @@ fun WishlistScreen(
             ReorderItemsSheet(
                 items = state.items,
                 selectedCount = state.selectedIds.size,
-                onSelectAll = { viewModel.selectAll(state.items.map { it.item.id }) },
+                onSelectAll = { vm.selectAll(state.items.map { it.item.id }) },
                 onSave = { orderedIds ->
-                    viewModel.persistVisibleOrder(orderedIds)
+                    vm.persistVisibleOrder(orderedIds)
                     showReorderSheet = false
-                    viewModel.clearSelection()
+                    vm.clearSelection()
                 },
                 onDismiss = { showReorderSheet = false }
             )
@@ -1487,6 +1499,7 @@ private fun LazyListScope.gridRows(
     onOpenItem: (Long) -> Unit,
     onToggleSelection: (Long) -> Unit,
     onEnterSelection: (Long) -> Unit,
+    onItemPurchasedChanged: ((Long, Boolean) -> Unit)? = null,
     expanded: Boolean = true
 ) {
     if (!expanded) return
@@ -1507,6 +1520,7 @@ private fun LazyListScope.gridRows(
                     selected = selected,
                     selectionMode = selectionMode,
                     onLongClick = { if (!selectionMode) onEnterSelection(id) else onToggleSelection(id) },
+                    onTogglePurchased = { onItemPurchasedChanged?.invoke(id, !item.item.isPurchased) },
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -1523,6 +1537,7 @@ private fun LazyListScope.carouselRows(
     onOpenItem: (Long) -> Unit,
     onToggleSelection: (Long) -> Unit,
     onEnterSelection: (Long) -> Unit,
+    onItemPurchasedChanged: ((Long, Boolean) -> Unit)? = null,
     expanded: Boolean = true
 ) {
     if (!expanded) return
@@ -1542,6 +1557,7 @@ private fun LazyListScope.carouselRows(
                     selected = selected,
                     selectionMode = selectionMode,
                     onLongClick = { if (!selectionMode) onEnterSelection(id) else onToggleSelection(id) },
+                    onTogglePurchased = { onItemPurchasedChanged?.invoke(id, !item.item.isPurchased) },
                     modifier = Modifier.width(172.dp)
                 )
             }
@@ -1555,7 +1571,8 @@ private fun FilterBar(
     onCategoryToggle: (Long) -> Unit,
     onClearStores: () -> Unit,
     onStoreToggle: (String) -> Unit,
-    onAttention: (AttentionFilter) -> Unit
+    onAttention: (AttentionFilter) -> Unit,
+    onToggleShowPurchased: () -> Unit
 ) {
     var categoryExpanded by remember { mutableStateOf(false) }
     var storeExpanded by remember { mutableStateOf(false) }
@@ -1705,6 +1722,12 @@ private fun FilterBar(
             onClick = { onAttention(if (onSale) AttentionFilter.ALL else AttentionFilter.ON_SALE) },
             leadingIcon = Icons.Rounded.LocalOffer
         )
+        WishPill(
+            text = if (state.summary.itemCount > 0) "Show bought" else "Show bought",
+            selected = state.showPurchased,
+            onClick = onToggleShowPurchased,
+            leadingIcon = Icons.Rounded.ShoppingBag
+        )
     }
 }
 
@@ -1716,13 +1739,15 @@ private fun WishlistGridCard(
     modifier: Modifier = Modifier,
     selected: Boolean = false,
     selectionMode: Boolean = false,
-    onLongClick: (() -> Unit)? = null
+    onLongClick: (() -> Unit)? = null,
+    onTogglePurchased: (() -> Unit)? = null
 ) {
     val colors = MaterialTheme.colorScheme
     val extra = LocalWishExtraColors.current
     val price = item.price
     val listPrice = item.item.listPrice
     val borderColor = if (selected) colors.primary else extra.hairline
+    val isPurchased = item.item.isPurchased
 
     Surface(
         modifier = modifier
@@ -1754,7 +1779,18 @@ private fun WishlistGridCard(
                     item.item.lastCheckFailed -> "!" to com.wishwell.app.ui.components.BadgeTone.HIGH
                     else -> null
                 }
-                if (badge != null) {
+                if (isPurchased) {
+                    Box(modifier = Modifier.align(Alignment.TopEnd).padding(6.dp)) {
+                        Icon(
+                            Icons.Rounded.Done,
+                            contentDescription = "Bought",
+                            tint = colors.primary,
+                            modifier = Modifier.size(20.dp)
+                                .background(colors.surface, CircleShape)
+                        )
+                    }
+                }
+                if (!isPurchased && badge != null) {
                     Box(modifier = Modifier.align(Alignment.TopEnd).padding(6.dp)) {
                         com.wishwell.app.ui.components.DealBadge(badge.first, badge.second)
                     }
@@ -1776,6 +1812,25 @@ private fun WishlistGridCard(
                                 contentDescription = "Selected",
                                 tint = colors.onPrimary,
                                 modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+                if (!selectionMode && onTogglePurchased != null) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(6.dp)
+                    ) {
+                        IconButton(
+                            onClick = onTogglePurchased,
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isPurchased) Icons.Rounded.Done else Icons.Rounded.ShoppingBag,
+                                contentDescription = if (isPurchased) "Mark not bought" else "Mark bought",
+                                tint = if (isPurchased) colors.primary else extra.muted,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }

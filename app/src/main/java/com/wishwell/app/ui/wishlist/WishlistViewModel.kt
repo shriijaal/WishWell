@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -53,6 +54,7 @@ data class WishlistUiState(
     val selectedStores: Set<String> = emptySet(),
     val sort: SortMode = SortMode.RECENT,
     val attentionFilter: AttentionFilter = AttentionFilter.ALL,
+    val showPurchased: Boolean = false,
     val refreshing: Boolean = false,
     val message: String? = null,
     val loading: Boolean = true,
@@ -64,7 +66,7 @@ data class WishlistUiState(
 ) {
     val hasAnyItems: Boolean get() = allItems.isNotEmpty()
     val isFiltered: Boolean get() = query.isNotBlank() || categoryIds.isNotEmpty() ||
-        selectedStores.isNotEmpty() || attentionFilter != AttentionFilter.ALL
+        selectedStores.isNotEmpty() || attentionFilter != AttentionFilter.ALL || showPurchased
     val selectionMode: Boolean get() = selectedIds.isNotEmpty()
 }
 
@@ -86,6 +88,7 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
     private val storeFilters = MutableStateFlow<Set<String>>(emptySet())
     private val sort = MutableStateFlow(SortMode.RECENT)
     private val attentionFilter = MutableStateFlow(AttentionFilter.ALL)
+    private val showPurchased = MutableStateFlow(false)
     private val refreshing = MutableStateFlow(false)
     private val message = MutableStateFlow<String?>(null)
     private val selectedIds = MutableStateFlow<Set<Long>>(emptySet())
@@ -100,8 +103,12 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
             tags.groupBy { it.itemId }.mapValues { it.value.map { it.categoryId }.toSet() }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
-    val uiState: StateFlow<WishlistUiState> = combine(
-        repo.observeItems().combine(tagMap) { items, tags -> items to tags },
+    private val itemsWithTags = showPurchased.flatMapLatest { includePurchased ->
+        repo.observeItems(includePurchased = includePurchased).combine(tagMap) { items, tags -> items to tags }
+    }
+
+    val uiStateBase: StateFlow<WishlistUiState> = combine(
+        itemsWithTags,
         repo.observeCategories(),
         filters,
         status,
@@ -127,6 +134,8 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
 
             val matchesStore = f.stores.isEmpty() || item.item.storeName in f.stores
 
+            val matchesPurchased = item.item.isPurchased.not()
+
             val matchesAttention = when (f.attentionFilter) {
                 AttentionFilter.ALL -> true
                 AttentionFilter.ON_SALE -> (item.discountPercent ?: 0) > 0 || item.isAtLowest
@@ -138,7 +147,7 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
                 }
                 AttentionFilter.CHECK_FAILED -> item.item.lastCheckFailed
             }
-            matchesQuery && matchesCategory && matchesStore && matchesAttention
+            matchesQuery && matchesCategory && matchesStore && matchesPurchased && matchesAttention
         }
 
         val validIds = items.mapTo(mutableSetOf()) { it.item.id }
@@ -157,6 +166,7 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
             selectedStores = f.stores,
             sort = f.sort,
             attentionFilter = f.attentionFilter,
+            showPurchased = false,
             tagMap = tagMap,
             refreshing = s.first,
             message = s.second,
@@ -165,6 +175,14 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
             selectedIds = prunedSelected,
             readNotificationKeys = s.third
         )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = WishlistUiState()
+    )
+
+    val uiState: StateFlow<WishlistUiState> = uiStateBase.combine(showPurchased) { state, sp ->
+        state.copy(showPurchased = sp)
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
@@ -208,11 +226,27 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
         attentionFilter.value = filter
     }
 
+    fun toggleShowPurchased() {
+        showPurchased.value = !showPurchased.value
+    }
+
+    fun togglePurchased(id: Long, purchased: Boolean) {
+        viewModelScope.launch {
+            runCatching { repo.markItemPurchased(id, purchased) }
+                .onSuccess {
+                    val verb = if (purchased) "Marked as bought." else "Marked as not bought."
+                    postMessage(verb)
+                }
+                .onFailure { postMessage(it.message ?: "Couldn't update that item.") }
+        }
+    }
+
     fun clearFilters() {
         query.value = ""
         categoryFilters.value = emptySet()
         storeFilters.value = emptySet()
         attentionFilter.value = AttentionFilter.ALL
+        showPurchased.value = false
     }
 
     fun clearMessage() {

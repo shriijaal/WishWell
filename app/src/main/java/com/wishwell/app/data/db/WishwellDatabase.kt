@@ -13,7 +13,7 @@ import com.wishwell.app.data.model.WishItem
 
 @Database(
     entities = [Category::class, WishItem::class, PricePoint::class, ItemCategoryTag::class],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class WishwellDatabase : RoomDatabase() {
@@ -82,13 +82,22 @@ abstract class WishwellDatabase : RoomDatabase() {
             }
         }
 
+        // Purchase tracking: isPurchased + purchasedAt columns.
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE items ADD COLUMN isPurchased INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE items ADD COLUMN purchasedAt INTEGER")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_items_isPurchased` ON `items` (`isPurchased`)")
+            }
+        }
+
         fun build(context: Context): WishwellDatabase =
             Room.databaseBuilder(
                 context.applicationContext,
                 WishwellDatabase::class.java,
                 "wishwell.db"
             )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                 .fallbackToDestructiveMigration()
                 .fallbackToDestructiveMigrationOnDowngrade()
                 .build()
