@@ -322,7 +322,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                             }
                         }
                     },
-                    onFailure = { it.message ?: "Couldn't restore backup from Downloads." }
+                    onFailure = { it.message ?: "Couldn't restore backup." }
                 )
             )
         }

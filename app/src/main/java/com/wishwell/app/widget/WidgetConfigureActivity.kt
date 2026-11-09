@@ -9,10 +9,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,15 +18,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -44,7 +39,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.wishwell.app.ui.components.SectionLabel
+import com.wishwell.app.ui.components.SettingsCard
+import com.wishwell.app.ui.components.WishPill
 import com.wishwell.app.ui.theme.LocalWishExtraColors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -117,7 +114,7 @@ private fun WidgetConfigureScreen(
             style = MaterialTheme.typography.bodyMedium,
             color = extra.muted
         )
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(18.dp))
 
         WidgetSettingsEditor(
             widgetKey = "default",
@@ -137,140 +134,125 @@ private fun WidgetSettingsEditor(
     var settings by remember { mutableStateOf(WidgetSettingsStore.load(context, widgetKey)) }
 
     // ── Theme ──
-    Text(
-        text = "Theme",
-        style = MaterialTheme.typography.titleMedium,
-        color = colors.onSurface
-    )
-    Spacer(modifier = Modifier.height(8.dp))
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf(
-            "system" to "System",
-            "light" to "Light",
-            "dark" to "Dark"
-        ).forEach { (key, label) ->
-            val selected = settings.theme == key
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = if (selected) colors.primary.copy(alpha = 0.10f) else Color.Transparent,
-                border = androidx.compose.foundation.BorderStroke(
-                    if (selected) 2.dp else 1.dp,
-                    if (selected) colors.primary else extra.hairline
-                ),
-                modifier = Modifier
-                    .clickable { settings = settings.copy(theme = key) }
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
-            ) {
-                Text(
+    SectionLabel("Theme")
+    Spacer(modifier = Modifier.height(10.dp))
+    SettingsCard {
+        Text(
+            text = "Choose how the widget looks. System follows your device's light/dark setting.",
+            style = MaterialTheme.typography.bodySmall,
+            color = extra.muted
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(
+                "system" to "System",
+                "light" to "Light",
+                "dark" to "Dark"
+            ).forEach { (key, label) ->
+                WishPill(
                     text = label,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (selected) colors.primary else colors.onSurface
+                    selected = settings.theme == key,
+                    onClick = { settings = settings.copy(theme = key) }
                 )
             }
         }
     }
 
-    Spacer(modifier = Modifier.height(20.dp))
+    Spacer(modifier = Modifier.height(18.dp))
 
     // ── Style ──
-    Text(
-        text = "Style",
-        style = MaterialTheme.typography.titleMedium,
-        color = colors.onSurface
-    )
-    Spacer(modifier = Modifier.height(8.dp))
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf(
-            "list" to "List",
-            "card" to "Card",
-            "compact" to "Compact"
-        ).forEach { (key, label) ->
-            val selected = settings.style == key
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = if (selected) colors.primary.copy(alpha = 0.10f) else Color.Transparent,
-                border = androidx.compose.foundation.BorderStroke(
-                    if (selected) 2.dp else 1.dp,
-                    if (selected) colors.primary else extra.hairline
-                ),
-                modifier = Modifier
-                    .clickable { settings = settings.copy(style = key) }
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
-            ) {
-                Text(
+    SectionLabel("Style")
+    Spacer(modifier = Modifier.height(10.dp))
+    SettingsCard {
+        Text(
+            text = "Choose how items are laid out in the widget.",
+            style = MaterialTheme.typography.bodySmall,
+            color = extra.muted
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(
+                "list" to "List",
+                "card" to "Card",
+                "compact" to "Compact"
+            ).forEach { (key, label) ->
+                WishPill(
                     text = label,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (selected) colors.primary else colors.onSurface
+                    selected = settings.style == key,
+                    onClick = { settings = settings.copy(style = key) }
                 )
             }
         }
     }
 
-    Spacer(modifier = Modifier.height(20.dp))
+    Spacer(modifier = Modifier.height(18.dp))
 
     // ── Transparency ──
-    Text(
-        text = "Transparency",
-        style = MaterialTheme.typography.titleMedium,
-        color = colors.onSurface
-    )
-    Spacer(modifier = Modifier.height(8.dp))
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
+    SectionLabel("Transparency")
+    Spacer(modifier = Modifier.height(10.dp))
+    SettingsCard {
         Text(
-            text = "${settings.transparency}%",
-            style = MaterialTheme.typography.bodyMedium,
-            color = extra.muted,
-            modifier = Modifier.width(40.dp)
+            text = "Lower = more transparent (background shows through).",
+            style = MaterialTheme.typography.bodySmall,
+            color = extra.muted
         )
-        Spacer(modifier = Modifier.width(8.dp))
-        Slider(
-            value = settings.transparency / 100f,
-            onValueChange = { settings = settings.copy(transparency = (it * 100).roundToInt()) },
-            valueRange = 0f..1f
-        )
-    }
-    Text(
-        text = "Lower = more transparent (background shows through)",
-        style = MaterialTheme.typography.labelSmall,
-        color = extra.muted
-    )
-
-    Spacer(modifier = Modifier.height(20.dp))
-
-    // ── Blur ──
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Switch(
-            checked = settings.blur,
-            onCheckedChange = { settings = settings.copy(blur = it) },
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = colors.onPrimary,
-                checkedTrackColor = colors.primary,
-                uncheckedThumbColor = extra.muted,
-                uncheckedTrackColor = extra.hairline
-            )
-        )
-        Spacer(modifier = Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
+        Spacer(modifier = Modifier.height(10.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Text(
-                text = "Blur background",
+                text = "${settings.transparency}%",
                 style = MaterialTheme.typography.bodyMedium,
-                color = colors.onSurface
+                color = extra.muted,
+                modifier = Modifier.width(40.dp)
             )
-            Text(
-                text = "Applies a blur effect behind the widget content",
-                style = MaterialTheme.typography.labelSmall,
-                color = extra.muted
+            Spacer(modifier = Modifier.width(8.dp))
+            Slider(
+                value = settings.transparency / 100f,
+                onValueChange = { settings = settings.copy(transparency = (it * 100).roundToInt()) },
+                valueRange = 0f..1f
             )
         }
     }
 
-    Spacer(modifier = Modifier.height(32.dp))
+    Spacer(modifier = Modifier.height(18.dp))
+
+    // ── Blur ──
+    SectionLabel("Blur background")
+    Spacer(modifier = Modifier.height(10.dp))
+    SettingsCard {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Switch(
+                checked = settings.blur,
+                onCheckedChange = { settings = settings.copy(blur = it) },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = colors.onPrimary,
+                    checkedTrackColor = colors.primary,
+                    uncheckedThumbColor = extra.muted,
+                    uncheckedTrackColor = extra.hairline
+                )
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Blur background",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.onSurface
+                )
+                Text(
+                    text = "Applies a blur effect behind the widget content",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = extra.muted
+                )
+            }
+        }
+    }
+
+    Spacer(modifier = Modifier.height(24.dp))
 
     Row(
         modifier = Modifier.fillMaxWidth(),

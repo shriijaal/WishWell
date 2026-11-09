@@ -64,6 +64,7 @@ import com.wishwell.app.ui.components.ConfirmDialog
 import com.wishwell.app.ui.components.LoadingSpinner
 import com.wishwell.app.ui.components.NoticeBar
 import com.wishwell.app.ui.components.SectionLabel
+import com.wishwell.app.ui.components.SettingsCard
 import com.wishwell.app.ui.components.WishPill
 import com.wishwell.app.ui.theme.AccentPresets
 import com.wishwell.app.ui.theme.LocalWishExtraColors
@@ -603,24 +604,31 @@ fun SettingsScreen(container: AppContainer) {
                     Text(if (backupBusy) "Working…" else "Backup now", color = if (backupBusy) extra.muted else colors.onSurface)
                 }
                 OutlinedButton(
-                    onClick = { importLauncher.launch(arrayOf("application/json", "text/*", "*/*")) },
+                    onClick = {
+                        val tracked = state.backupFiles
+                        if (tracked.isNotEmpty()) {
+                            viewModel.restoreFromBackupFile(tracked.first().path)
+                        } else {
+                            viewModel.restoreFromDownloads()
+                        }
+                    },
                     enabled = !backupBusy,
                     shape = CircleShape,
                     modifier = Modifier.weight(1f),
                     border = BorderStroke(1.dp, extra.hairline)
                 ) {
-                    Text(if (backupBusy) "Working…" else "Restore now", color = if (backupBusy) extra.muted else colors.onSurface)
+                    Text(if (backupBusy) "Working…" else "Restore", color = if (backupBusy) extra.muted else colors.onSurface)
                 }
             }
             Spacer(Modifier.height(8.dp))
             OutlinedButton(
-                onClick = { viewModel.restoreFromDownloads() },
+                onClick = { importLauncher.launch(arrayOf("application/json", "text/*", "*/*")) },
                 enabled = !backupBusy,
                 shape = CircleShape,
                 modifier = Modifier.fillMaxWidth(),
                 border = BorderStroke(1.dp, extra.hairline)
             ) {
-                Text(if (backupBusy) "Working…" else "Restore from Downloads", color = if (backupBusy) extra.muted else colors.onSurface)
+                Text(if (backupBusy) "Working…" else "Restore from file…", color = if (backupBusy) extra.muted else colors.onSurface)
             }
             Spacer(Modifier.height(8.dp))
             OutlinedButton(
@@ -851,19 +859,6 @@ fun SettingsScreen(container: AppContainer) {
                 showCustomPicker = false
             }
         )
-    }
-}
-
-@Composable
-private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
-    val extra = LocalWishExtraColors.current
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, extra.hairline),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(modifier = Modifier.padding(16.dp), content = content)
     }
 }
 
