@@ -287,6 +287,37 @@ fun SettingsScreen(container: AppContainer) {
         Spacer(Modifier.height(18.dp))
         SectionLabel("Appearance")
         Spacer(Modifier.height(10.dp))
+
+        // App theme (top of appearance)
+        SettingsCard {
+            Text(
+                text = "App theme",
+                style = MaterialTheme.typography.titleSmall,
+                color = colors.onSurface
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = "Choose how the app looks. System follows your device's light/dark setting.",
+                style = MaterialTheme.typography.bodySmall,
+                color = extra.muted
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(
+                    "system" to "System",
+                    "light" to "Light",
+                    "dark" to "Dark"
+                ).forEach { (key, label) ->
+                    WishPill(
+                        text = label,
+                        selected = state.uiTheme == key,
+                        onClick = { viewModel.setUiTheme(key) }
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(18.dp))
         SettingsCard {
             Text(
                 text = "Accent color",
@@ -514,38 +545,6 @@ fun SettingsScreen(container: AppContainer) {
                     checked = state.navbarGlassGlow,
                     onCheckedChange = viewModel::setNavbarGlassGlow
                 )
-            }
-
-            Spacer(Modifier.height(16.dp))
-            androidx.compose.material3.HorizontalDivider(
-                color = extra.hairline.copy(alpha = 0.8f)
-            )
-            Spacer(Modifier.height(14.dp))
-
-            Text(
-                text = "App theme",
-                style = MaterialTheme.typography.titleSmall,
-                color = colors.onSurface
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = "Choose how the app looks. System follows your device's light/dark setting.",
-                style = MaterialTheme.typography.bodySmall,
-                color = extra.muted
-            )
-            Spacer(Modifier.height(10.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(
-                    "system" to "System",
-                    "light" to "Light",
-                    "dark" to "Dark"
-                ).forEach { (key, label) ->
-                    WishPill(
-                        text = label,
-                        selected = state.uiTheme == key,
-                        onClick = { viewModel.setUiTheme(key) }
-                    )
-                }
             }
         }
 
