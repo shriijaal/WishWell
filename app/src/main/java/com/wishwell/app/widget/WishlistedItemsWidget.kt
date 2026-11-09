@@ -49,7 +49,6 @@ class WishlistedItemsWidget : GlanceAppWidget() {
                 subtitle = if (entries.isEmpty()) "Save items in WishWell to see them here." else "${entries.size} saved",
                 entries = entries,
                 emptyMessage = "No wishlisted items yet",
-                accent = ColorProvider(widgetAccent(context, settings)),
                 settings = settings
             )
         }

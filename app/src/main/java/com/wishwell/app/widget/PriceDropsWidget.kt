@@ -27,7 +27,6 @@ class PriceDropsWidget : GlanceAppWidget() {
                 subtitle = if (entries.isEmpty()) "No items on sale or at a low right now." else "${entries.size} deal${if (entries.size == 1) "" else "s"}",
                 entries = entries,
                 emptyMessage = "No price drops right now",
-                accent = ColorProvider(widgetAccent(context, settings)),
                 settings = settings
             )
         }

@@ -123,7 +123,6 @@ internal fun WidgetListContent(
     subtitle: String,
     entries: List<WidgetEntry>,
     emptyMessage: String,
-    accent: ColorProvider,
     settings: WidgetSettingsStore.WidgetSettings
 ) {
     val colors = resolveColors(context, settings.theme)
@@ -148,7 +147,7 @@ internal fun WidgetListContent(
             )
             Box(
                 modifier = GlanceModifier
-                    .background(accent)
+                    .background(ColorProvider(Color(0xFFCFE39C)))
                     .cornerRadius(10.dp)
                     .padding(horizontal = 10.dp, vertical = 4.dp)
                     .clickable(actionStartActivity(syncWidgetIntent()))
@@ -156,7 +155,7 @@ internal fun WidgetListContent(
                 Text(
                     text = "Sync",
                     style = TextStyle(
-                        color = ColorProvider(colors.paper),
+                        color = ColorProvider(Color(0xFF1F3D2E)),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium
                     )
@@ -188,7 +187,7 @@ internal fun WidgetListContent(
             LazyColumn(modifier = GlanceModifier.fillMaxSize()) {
                 items(entries, itemId = { it.id }) { entry ->
                     EntryRow(entry = entry, colors = colors, alpha = alpha)
-                    Spacer(modifier = GlanceModifier.height(16.dp))
+                    Spacer(modifier = GlanceModifier.height(24.dp))
                 }
             }
         }
