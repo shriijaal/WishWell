@@ -143,7 +143,7 @@ class PriceTrackingViewModel(private val container: AppContainer) : ViewModel() 
         val ids = selectedIds.value
         if (ids.isEmpty()) return
         viewModelScope.launch {
-            runCatching { repo.setCategoryForItems(ids, categoryId) }
+            runCatching { repo.setItemsTags(ids, categoryId?.let { setOf(it) } ?: emptySet()) }
                 .onSuccess { postMessage("Moved ${ids.size} item${if (ids.size == 1) "" else "s"}.") }
                 .onFailure { postMessage(it.message ?: "Couldn't move selected items.") }
             selectedIds.value = emptySet()

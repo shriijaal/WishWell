@@ -52,8 +52,7 @@ class RecommendationEngine(private val stores: StoreRegistry) {
             .filter { it.item.id != target.item.id }
             .mapNotNull { candidate ->
                 val similarity = jaccard(targetTokens, tokens(candidate.item.title))
-                val sameCategory = target.item.categoryId != null &&
-                    candidate.item.categoryId == target.item.categoryId
+                val sameCategory = target.item.categoryId != null && candidate.item.categoryId == target.item.categoryId
                 val priceBand = priceBandScore(target.price, candidate.price)
 
                 // exclude near-identical cross-store matches (shown separately)

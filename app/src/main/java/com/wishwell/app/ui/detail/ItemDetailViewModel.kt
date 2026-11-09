@@ -34,6 +34,11 @@ class ItemDetailViewModel(
     val item: StateFlow<ItemWithStats?> = repo.observeItem(itemId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    /** This item's category tags, from the junction table. */
+    val categoryIds: StateFlow<Set<Long>> = repo.observeItemTags()
+        .map { tags -> tags.filter { it.itemId == itemId }.map { it.categoryId }.toSet() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
     val history: StateFlow<List<PricePoint>> = repo.observeHistory(itemId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -95,7 +100,13 @@ class ItemDetailViewModel(
     }
 
     fun setCategory(categoryId: Long?) {
-        viewModelScope.launch { repo.setCategory(itemId, categoryId) }
+        viewModelScope.launch {
+            val current = categoryIds.value
+            val next = if (categoryId == null) emptySet() else {
+                if (current.contains(categoryId)) current - categoryId else current + categoryId
+            }
+            repo.setItemTags(itemId, next)
+        }
     }
 
     fun setNotes(notes: String) {

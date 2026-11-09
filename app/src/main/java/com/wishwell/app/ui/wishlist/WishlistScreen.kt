@@ -290,13 +290,19 @@ fun WishlistScreen(
 
         val multiCategory = state.categoryIds.size >= 2
         val categoryGroups: List<Pair<Category?, List<ItemWithStats>>> = if (multiCategory) {
-            state.items.groupBy { it.item.categoryId }
-                .entries
-                .map { (catId, catItems) ->
-                    val category = state.categories.firstOrNull { it.category.id == catId }?.category
-                    category to catItems.sortedByDescending { it.item.createdAt }
-                }
-                .sortedBy { (cat, _) -> cat?.name ?: "Unsorted" }
+            val selectedCats = state.categories.filter { state.categoryIds.contains(it.category.id) }
+            val groups = selectedCats.map { cw ->
+                val catItems = state.items.filter { item ->
+                    state.tagMap[item.item.id]?.contains(cw.category.id) == true
+                }.sortedByDescending { it.item.createdAt }
+                cw.category to catItems
+            }
+            if (state.categoryIds.contains(-1L)) {
+                val unsorted = state.items.filter { item ->
+                    (state.tagMap[item.item.id] ?: emptySet()).isEmpty()
+                }.sortedByDescending { it.item.createdAt }
+                groups + (null to unsorted)
+            } else groups
         } else emptyList()
 
         when {
@@ -1559,7 +1565,7 @@ private fun FilterBar(
     onAttention: (AttentionFilter) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val hasUnsorted = state.allItems.any { it.item.categoryId == null }
+    val hasUnsorted = state.allItems.any { item -> (state.tagMap[item.item.id] ?: emptySet()).isEmpty() }
     val selectedCategoryIds = state.categoryIds
     val selectedCategories = state.categories.filter { selectedCategoryIds.contains(it.category.id) }
     val categoryLabel = when {

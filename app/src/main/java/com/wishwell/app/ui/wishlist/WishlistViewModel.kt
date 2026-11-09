@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -54,7 +55,9 @@ data class WishlistUiState(
     val loading: Boolean = true,
     val summary: WishlistSummary = WishlistSummary(0, "USD", 0.0, 0.0, 0, 0, 0, 0, false),
     val selectedIds: Set<Long> = emptySet(),
-    val readNotificationKeys: Set<String> = emptySet()
+    val readNotificationKeys: Set<String> = emptySet(),
+    /** itemId -> its category tags (from the junction table). */
+    val tagMap: Map<Long, Set<Long>> = emptyMap()
 ) {
     val hasAnyItems: Boolean get() = allItems.isNotEmpty()
     val isFiltered: Boolean get() = query.isNotBlank() || categoryIds.isNotEmpty() || attentionFilter != AttentionFilter.ALL
@@ -86,13 +89,18 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
     }
     private val status = combine(refreshing, message, prefs.readNotificationKeys) { r, m, read -> Triple(r, m, read) }
 
+    private val tagMap: StateFlow<Map<Long, Set<Long>>> =
+        repo.observeItemTags().map { tags ->
+            tags.groupBy { it.itemId }.mapValues { it.value.map { it.categoryId }.toSet() }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
     val uiState: StateFlow<WishlistUiState> = combine(
-        repo.observeItems(),
+        repo.observeItems().combine(tagMap) { items, tags -> items to tags },
         repo.observeCategories(),
         filters,
         status,
         selectedIds
-    ) { items, categories, f, s, selected ->
+    ) { (items, tagMap), categories, f, s, selected ->
         val filtered = items.filter { item ->
             val matchesQuery = f.query.isBlank() || listOf(
                 item.item.title,
@@ -105,9 +113,9 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
             val matchesCategory = when {
                 f.categoryIds.isEmpty() -> true
                 else -> {
-                    val itemCat = item.item.categoryId
-                    if (itemCat == null) f.categoryIds.contains(-1L)
-                    else f.categoryIds.contains(itemCat)
+                    val itemTags = tagMap[item.item.id] ?: emptySet()
+                    if (itemTags.isEmpty()) f.categoryIds.contains(-1L)
+                    else itemTags.intersect(f.categoryIds).isNotEmpty()
                 }
             }
 
@@ -135,6 +143,7 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
             categoryIds = f.categoryIds,
             sort = f.sort,
             attentionFilter = f.attentionFilter,
+            tagMap = tagMap,
             refreshing = s.first,
             message = s.second,
             loading = false,
@@ -241,7 +250,7 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
         val ids = selectedIds.value
         if (ids.isEmpty()) return
         viewModelScope.launch {
-            runCatching { repo.setCategoryForItems(ids, categoryId) }
+            runCatching { repo.setItemsTags(ids, categoryId?.let { setOf(it) } ?: emptySet()) }
                 .onSuccess { postMessage("Moved ${ids.size} item${if (ids.size == 1) "" else "s"}.") }
                 .onFailure { postMessage(it.message ?: "Couldn't move selected items.") }
             selectedIds.value = emptySet()

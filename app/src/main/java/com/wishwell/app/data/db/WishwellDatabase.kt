@@ -7,12 +7,13 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.wishwell.app.data.model.Category
+import com.wishwell.app.data.model.ItemCategoryTag
 import com.wishwell.app.data.model.PricePoint
 import com.wishwell.app.data.model.WishItem
 
 @Database(
-    entities = [Category::class, WishItem::class, PricePoint::class],
-    version = 6,
+    entities = [Category::class, WishItem::class, PricePoint::class, ItemCategoryTag::class],
+    version = 7,
     exportSchema = false
 )
 abstract class WishwellDatabase : RoomDatabase() {
@@ -54,13 +55,40 @@ abstract class WishwellDatabase : RoomDatabase() {
             }
         }
 
+        // Many-to-many item <-> category tags.
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `item_category_tags` (
+                        `itemId` INTEGER NOT NULL,
+                        `categoryId` INTEGER NOT NULL,
+                        PRIMARY KEY (`itemId`, `categoryId`),
+                        FOREIGN KEY (`itemId`) REFERENCES `items` (`id`) ON DELETE CASCADE,
+                        FOREIGN KEY (`categoryId`) REFERENCES `categories` (`id`) ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_item_category_tags_categoryId` ON `item_category_tags` (`categoryId`)"
+                )
+                // Backfill existing single categoryId assignments into the junction table.
+                db.execSQL(
+                    """
+                    INSERT OR IGNORE INTO `item_category_tags` (`itemId`, `categoryId`)
+                    SELECT `id`, `categoryId` FROM `items` WHERE `categoryId` IS NOT NULL
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun build(context: Context): WishwellDatabase =
             Room.databaseBuilder(
                 context.applicationContext,
                 WishwellDatabase::class.java,
                 "wishwell.db"
             )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                 .fallbackToDestructiveMigration()
                 .fallbackToDestructiveMigrationOnDowngrade()
                 .build()

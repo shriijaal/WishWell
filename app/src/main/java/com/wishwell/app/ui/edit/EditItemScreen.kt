@@ -260,14 +260,14 @@ fun EditItemScreen(
             Spacer(Modifier.height(10.dp))
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 item(key = "none") {
-                    WishPill(text = "Unsorted", selected = state.categoryId == null, onClick = { viewModel.setCategory(null) })
+                    WishPill(text = "Unsorted", selected = state.categoryIds.isEmpty(), onClick = { viewModel.clearCategories() })
                 }
                 items(state.categories, key = { it.category.id }) { category ->
                     WishPill(
                         text = category.category.name,
                         leadingIcon = categoryIcon(category.category.emoji, category.category.name),
-                        selected = state.categoryId == category.category.id,
-                        onClick = { viewModel.setCategory(category.category.id) }
+                        selected = state.categoryIds.contains(category.category.id),
+                        onClick = { viewModel.toggleCategory(category.category.id) }
                     )
                 }
             }

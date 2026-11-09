@@ -15,8 +15,8 @@ interface CategoryDao {
     @Query(
         """
         SELECT c.*,
-            (SELECT COUNT(*) FROM items i WHERE i.categoryId = c.id AND i.isArchived = 0) AS itemCount,
-            (SELECT COALESCE(SUM(i.currentPrice), 0.0) FROM items i WHERE i.categoryId = c.id AND i.isArchived = 0) AS totalValue
+            (SELECT COUNT(*) FROM item_category_tags ict JOIN items i ON i.id = ict.itemId WHERE ict.categoryId = c.id AND i.isArchived = 0) AS itemCount,
+            (SELECT COALESCE(SUM(i.currentPrice), 0.0) FROM item_category_tags ict JOIN items i ON i.id = ict.itemId WHERE ict.categoryId = c.id AND i.isArchived = 0) AS totalValue
         FROM categories c
         ORDER BY c.sortOrder ASC, c.createdAt ASC
         """

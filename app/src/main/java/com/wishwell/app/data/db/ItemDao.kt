@@ -3,8 +3,10 @@ package com.wishwell.app.data.db
 import androidx.room.Dao
 import androidx.room.Delete
 import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
+import com.wishwell.app.data.model.ItemCategoryTag
 import com.wishwell.app.data.model.ItemWithStats
 import com.wishwell.app.data.model.PricePoint
 import com.wishwell.app.data.model.WishItem
@@ -57,8 +59,20 @@ interface ItemDao {
     @Query("DELETE FROM items WHERE id IN (:ids)")
     suspend fun deleteByIds(ids: List<Long>)
 
-    @Query("UPDATE items SET categoryId = :categoryId, updatedAt = :updatedAt WHERE id IN (:ids)")
-    suspend fun setCategoryForIds(ids: List<Long>, categoryId: Long?, updatedAt: Long)
+    @Query("DELETE FROM item_category_tags WHERE itemId = :itemId")
+    suspend fun clearItemTags(itemId: Long)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertItemTags(tags: List<ItemCategoryTag>)
+
+    @Query("SELECT categoryId FROM item_category_tags WHERE itemId = :itemId ORDER BY categoryId")
+    suspend fun getTagIdsForItem(itemId: Long): List<Long>
+
+    @Query("SELECT * FROM item_category_tags ORDER BY itemId ASC, categoryId ASC")
+    fun observeItemTags(): Flow<List<ItemCategoryTag>>
+
+    @Query("SELECT itemId, categoryId FROM item_category_tags ORDER BY itemId, categoryId")
+    suspend fun getAllItemTags(): List<ItemCategoryTag>
 
     @Query("SELECT * FROM price_points WHERE itemId = :itemId ORDER BY recordedAt ASC")
     fun observeHistory(itemId: Long): Flow<List<PricePoint>>

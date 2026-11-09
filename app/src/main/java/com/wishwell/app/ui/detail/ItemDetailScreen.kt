@@ -28,6 +28,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
@@ -131,6 +132,7 @@ fun ItemDetailRoute(
         }
     )
     val item by viewModel.item.collectAsStateWithLifecycle()
+    val categoryIds by viewModel.categoryIds.collectAsStateWithLifecycle()
     val history by viewModel.history.collectAsStateWithLifecycle()
     val categories by viewModel.categories.collectAsStateWithLifecycle()
     val similar by viewModel.similar.collectAsStateWithLifecycle()
@@ -165,6 +167,7 @@ fun ItemDetailRoute(
     ItemDetailContent(
         container = container,
         detail = current,
+        categoryIds = categoryIds,
         history = history,
         categories = categories,
         similar = similar,
@@ -193,6 +196,7 @@ fun ItemDetailRoute(
 private fun ItemDetailContent(
     container: AppContainer,
     detail: ItemWithStats,
+    categoryIds: Set<Long>,
     history: List<PricePoint>,
     categories: List<CategoryWithCount>,
     similar: List<SimilarPick>,
@@ -513,7 +517,8 @@ private fun ItemDetailContent(
                     }
                 )
                 Box(modifier = Modifier.weight(1f)) {
-                    val collectionValue = detail.categoryName ?: "Unsorted"
+                    val categoryNameById = categories.associate { it.category.id to it.category.name }
+                    val collectionValue = if (categoryIds.isEmpty()) "Unsorted" else categoryIds.mapNotNull { categoryNameById[it] }.joinToString(", ")
                     InfoTile(
                         label = "Collection",
                         value = collectionValue,
@@ -521,6 +526,7 @@ private fun ItemDetailContent(
                         modifier = Modifier.fillMaxWidth(),
                         onClick = { categoryMenuOpen = true }
                     )
+                    val isUnsorted = categoryIds.isEmpty()
                     DropdownMenu(
                         expanded = categoryMenuOpen,
                         onDismissRequest = { categoryMenuOpen = false }
@@ -529,16 +535,17 @@ private fun ItemDetailContent(
                             text = { Text("Unsorted") },
                             onClick = {
                                 onSetCategory(null)
-                                categoryMenuOpen = false
-                            }
+                            },
+                            trailingIcon = { if (isUnsorted) Icons.Rounded.Check else null }
                         )
                         categories.forEach { category ->
+                            val isSelected = categoryIds.contains(category.category.id)
                             DropdownMenuItem(
                                 text = { Text(category.category.name) },
                                 onClick = {
                                     onSetCategory(category.category.id)
-                                    categoryMenuOpen = false
-                                }
+                                },
+                                trailingIcon = { if (isSelected) Icons.Rounded.Check else null }
                             )
                         }
                     }

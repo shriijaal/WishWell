@@ -34,7 +34,7 @@ data class AddItemUiState(
     val description: String = "",
     val specs: List<Pair<String, String>> = emptyList(),
     val inStock: Boolean? = null,
-    val categoryId: Long? = null,
+    val categoryIds: Set<Long> = emptySet(),
     val categories: List<CategoryWithCount> = emptyList(),
     val saving: Boolean = false,
     val saveError: String? = null,
@@ -99,7 +99,13 @@ class AddItemViewModel(
 
     fun setImageUrl(value: String) = _state.update { it.copy(imageUrl = value) }
 
-    fun setCategory(id: Long?) = _state.update { it.copy(categoryId = id) }
+    fun toggleCategory(id: Long) = _state.update { current ->
+        val next = current.categoryIds.toMutableSet()
+        if (!next.add(id)) next.remove(id)
+        current.copy(categoryIds = next)
+    }
+
+    fun clearCategories() = _state.update { current -> current.copy(categoryIds = emptySet()) }
 
     fun dismissError() = _state.update { it.copy(fetchError = null, saveError = null) }
 
@@ -198,7 +204,7 @@ class AddItemViewModel(
                         listPrice = listPrice,
                         currencyCode = currency,
                         targetPrice = target,
-                        categoryId = current.categoryId,
+                        categoryIds = current.categoryIds,
                         notes = current.notes,
                         brand = current.brand.trim().takeIf { it.isNotEmpty() },
                         priceHistory = current.fetchedHistory,

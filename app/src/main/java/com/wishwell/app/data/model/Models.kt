@@ -20,6 +20,31 @@ data class Category(
     val createdAt: Long = System.currentTimeMillis()
 )
 
+/** Junction table for the many-to-many item <-> category (tag) relationship. */
+@Entity(
+    tableName = "item_category_tags",
+    primaryKeys = ["itemId", "categoryId"],
+    foreignKeys = [
+        ForeignKey(
+            entity = WishItem::class,
+            parentColumns = ["id"],
+            childColumns = ["itemId"],
+            onDelete = ForeignKey.CASCADE
+        ),
+        ForeignKey(
+            entity = Category::class,
+            parentColumns = ["id"],
+            childColumns = ["categoryId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index("categoryId")]
+)
+data class ItemCategoryTag(
+    val itemId: Long,
+    val categoryId: Long
+)
+
 @Entity(
     tableName = "items",
     foreignKeys = [
@@ -43,6 +68,7 @@ data class WishItem(
     val currentPrice: Double? = null,
     val listPrice: Double? = null,
     val targetPrice: Double? = null,
+    /** Primary (first) tag, kept in sync with item_category_tags for single-tag display paths. */
     val categoryId: Long? = null,
     val notes: String = "",
     val description: String = "",

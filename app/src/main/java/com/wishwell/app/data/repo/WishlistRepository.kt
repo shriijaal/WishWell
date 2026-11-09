@@ -5,6 +5,7 @@ import com.wishwell.app.data.db.CategoryDao
 import com.wishwell.app.data.db.ItemDao
 import com.wishwell.app.data.model.Category
 import com.wishwell.app.data.model.CategoryWithCount
+import com.wishwell.app.data.model.ItemCategoryTag
 import com.wishwell.app.data.model.ItemWithStats
 import com.wishwell.app.data.model.PricePoint
 import com.wishwell.app.data.model.WishItem
@@ -35,7 +36,7 @@ data class NewItemDraft(
     val listPrice: Double?,
     val currencyCode: String,
     val targetPrice: Double?,
-    val categoryId: Long?,
+    val categoryIds: Set<Long> = emptySet(),
     val notes: String,
     val brand: String?,
     val priceHistory: List<HistoricalPrice> = emptyList(),
@@ -80,6 +81,8 @@ class WishlistRepository(
 
     fun observeItems(): Flow<List<ItemWithStats>> = itemDao.observeActiveItems()
 
+    fun observeItemTags(): Flow<List<ItemCategoryTag>> = itemDao.observeItemTags()
+
     fun observeCategories(): Flow<List<CategoryWithCount>> = categoryDao.observeAll()
 
     fun observeItem(id: Long): Flow<ItemWithStats?> = itemDao.observeItem(id)
@@ -119,7 +122,7 @@ class WishlistRepository(
                 currentPrice = draft.price,
                 listPrice = draft.listPrice,
                 targetPrice = draft.targetPrice,
-                categoryId = draft.categoryId,
+                categoryId = draft.categoryIds.firstOrNull(),
                 notes = draft.notes.trim(),
                 description = draft.description.trim().take(4000),
                 specsJson = WishItem.encodeSpecs(draft.specs),
@@ -146,6 +149,12 @@ class WishlistRepository(
                 )
             }
         }
+        // persist many-to-many category tags
+        if (draft.categoryIds.isNotEmpty()) {
+            itemDao.insertItemTags(
+                draft.categoryIds.map { ItemCategoryTag(itemId = itemId, categoryId = it) }
+            )
+        }
         notifyWidgetsChanged()
         itemId
     }
@@ -156,18 +165,31 @@ class WishlistRepository(
         notifyWidgetsChanged()
     }
 
-    suspend fun setCategory(id: Long, categoryId: Long?) = withContext(Dispatchers.IO) {
+    suspend fun setItemTags(id: Long, categoryIds: Set<Long>) = withContext(Dispatchers.IO) {
         val item = itemDao.getById(id) ?: return@withContext
-        itemDao.update(item.copy(categoryId = categoryId, updatedAt = System.currentTimeMillis()))
+        itemDao.clearItemTags(id)
+        if (categoryIds.isNotEmpty()) {
+            itemDao.insertItemTags(
+                categoryIds.map { ItemCategoryTag(itemId = id, categoryId = it) }
+            )
+        }
+        itemDao.update(item.copy(categoryId = categoryIds.firstOrNull(), updatedAt = System.currentTimeMillis()))
         notifyWidgetsChanged()
     }
 
-    suspend fun setCategoryForItems(ids: Collection<Long>, categoryId: Long?) = withContext(Dispatchers.IO) {
+    suspend fun setItemsTags(ids: Collection<Long>, categoryIds: Set<Long>) = withContext(Dispatchers.IO) {
         val unique = ids.distinct()
         if (unique.isEmpty()) return@withContext
         val now = System.currentTimeMillis()
-        unique.chunked(900).forEach { chunk ->
-            itemDao.setCategoryForIds(chunk, categoryId, now)
+        unique.forEach { id ->
+            val item = itemDao.getById(id) ?: return@forEach
+            itemDao.clearItemTags(id)
+            if (categoryIds.isNotEmpty()) {
+                itemDao.insertItemTags(
+                    categoryIds.map { ItemCategoryTag(itemId = id, categoryId = it) }
+                )
+            }
+            itemDao.update(item.copy(categoryId = categoryIds.firstOrNull(), updatedAt = now))
         }
         notifyWidgetsChanged()
     }
@@ -218,7 +240,7 @@ class WishlistRepository(
         currentPrice: Double?,
         listPrice: Double?,
         targetPrice: Double?,
-        categoryId: Long?,
+        categoryIds: Set<Long>,
         notes: String,
         description: String,
         specs: List<Pair<String, String>>,
@@ -265,7 +287,7 @@ class WishlistRepository(
             currentPrice = currentPrice,
             listPrice = listPrice,
             targetPrice = targetPrice,
-            categoryId = categoryId,
+            categoryId = categoryIds.firstOrNull(),
             notes = notes.trim().take(600),
             description = description.trim().take(4000),
             specsJson = WishItem.encodeSpecs(specs),
@@ -274,6 +296,13 @@ class WishlistRepository(
             lastCheckFailed = false
         )
         itemDao.update(updated)
+        // persist many-to-many category tags (replace existing set)
+        itemDao.clearItemTags(id)
+        if (categoryIds.isNotEmpty()) {
+            itemDao.insertItemTags(
+                categoryIds.map { ItemCategoryTag(itemId = id, categoryId = it) }
+            )
+        }
         notifyWidgetsChanged()
     }
 
@@ -607,6 +636,10 @@ class WishlistRepository(
                     lastCheckedAt = now - day
                 )
             )
+            val demoCategoryId = categories[demo.category]?.id
+            if (demoCategoryId != null) {
+                itemDao.insertItemTags(listOf(ItemCategoryTag(itemId, demoCategoryId)))
+            }
             history.forEach { (daysAgo, price) ->
                 itemDao.insertPoint(
                     PricePoint(
@@ -741,6 +774,7 @@ class WishlistRepository(
         val items = itemDao.getAllItemsRaw()
         val pointsByItem = itemDao.getAllPoints().groupBy { it.itemId }
         val categoryNameById = categories.associate { it.id to it.name }
+        val itemTagMap = itemDao.getAllItemTags().groupBy { it.itemId }.mapValues { it.value.map { it.categoryId } }
 
         val root = org.json.JSONObject()
             .put("format", "wishwell-backup")
@@ -771,6 +805,9 @@ class WishlistRepository(
                 .put("currencyCode", item.currencyCode)
                 .put("targetPrice", item.targetPrice)
                 .put("categoryName", item.categoryId?.let { categoryNameById[it] })
+                .put("categoryIds", org.json.JSONArray().also { arr ->
+                    (itemTagMap[item.id] ?: emptyList()).forEach { arr.put(it) }
+                })
                 .put("notes", item.notes)
                 .put("description", item.description)
                 .put("specs", org.json.JSONArray().also { arr ->
@@ -854,7 +891,12 @@ class WishlistRepository(
             val productUrl = o.optString("productUrl").trim()
             val currencyCode = o.optString("currencyCode").trim().uppercase().take(3).ifBlank { "USD" }
             val categoryName = o.optString("categoryName").takeIf { it.isNotBlank() && it != "null" }?.trim()
-            val categoryId = categoryName?.let { categoryIdByName[it.lowercase()] }
+            val categoryIds = o.optJSONArray("categoryIds")?.let { arr ->
+                (0 until arr.length()).mapNotNull { i ->
+                    if (arr.isNull(i)) null else arr.getLong(i)
+                }.toSet()
+            } ?: emptySet()
+            val effectiveCategoryIds = if (categoryIds.isNotEmpty()) categoryIds else categoryName?.let { categoryIdByName[it.lowercase()] }?.let { setOf(it) } ?: emptySet()
 
             val imageUrls = mutableListOf<String>()
             o.optJSONArray("imageUrls")?.let { arr ->
@@ -908,7 +950,7 @@ class WishlistRepository(
                 currentPrice = optNullableDouble(o, "currentPrice"),
                 listPrice = optNullableDouble(o, "listPrice"),
                 targetPrice = optNullableDouble(o, "targetPrice"),
-                categoryId = categoryId,
+                categoryId = effectiveCategoryIds.firstOrNull(),
                 notes = o.optString("notes").take(600),
                 description = o.optString("description").take(4000),
                 specsJson = WishItem.encodeSpecs(specs),
@@ -921,6 +963,11 @@ class WishlistRepository(
                 lastCheckFailed = o.optBoolean("lastCheckFailed", false)
             )
             val newId = itemDao.insert(item)
+            if (effectiveCategoryIds.isNotEmpty()) {
+                itemDao.insertItemTags(
+                    effectiveCategoryIds.map { ItemCategoryTag(itemId = newId, categoryId = it) }
+                )
+            }
             if (urlKey != null) existingByUrl[urlKey] = item.copy(id = newId)
             itemsAdded++
 

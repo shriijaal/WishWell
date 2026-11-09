@@ -30,7 +30,7 @@ data class EditItemUiState(
     val notes: String = "",
     val description: String = "",
     val specs: List<Pair<String, String>> = emptyList(),
-    val categoryId: Long? = null,
+    val categoryIds: Set<Long> = emptySet(),
     val categories: List<CategoryWithCount> = emptyList(),
     val saving: Boolean = false,
     val saveError: String? = null
@@ -57,6 +57,10 @@ class EditItemViewModel(
                 _state.update { it.copy(loading = false, notFound = true) }
                 return@launch
             }
+            val itemTags = repo.observeItemTags().first()
+                .filter { it.itemId == itemId }
+                .map { it.categoryId }
+                .toSet()
             val w = item.item
             val images = w.imageUrls().ifEmpty { listOfNotNull(w.imageUrl?.takeIf { it.isNotBlank() }) }
             _state.update {
@@ -74,7 +78,7 @@ class EditItemViewModel(
                     notes = w.notes,
                     description = w.description,
                     specs = w.specs(),
-                    categoryId = w.categoryId
+                    categoryIds = itemTags
                 )
             }
         }
@@ -90,7 +94,13 @@ class EditItemViewModel(
     fun setTargetPrice(v: String) = _state.update { it.copy(targetPrice = v) }
     fun setNotes(v: String) = _state.update { it.copy(notes = v.take(600)) }
     fun setDescription(v: String) = _state.update { it.copy(description = v.take(4000)) }
-    fun setCategory(id: Long?) = _state.update { it.copy(categoryId = id) }
+    fun toggleCategory(id: Long) = _state.update { current ->
+        val next = current.categoryIds.toMutableSet()
+        if (!next.add(id)) next.remove(id)
+        current.copy(categoryIds = next)
+    }
+
+    fun clearCategories() = _state.update { current -> current.copy(categoryIds = emptySet()) }
     fun setImageInput(v: String) = _state.update { it.copy(imageInput = v) }
     fun dismissError() = _state.update { it.copy(saveError = null) }
 
@@ -160,7 +170,7 @@ class EditItemViewModel(
                     currentPrice = price,
                     listPrice = listPrice,
                     targetPrice = target,
-                    categoryId = current.categoryId,
+                    categoryIds = current.categoryIds,
                     notes = current.notes,
                     description = current.description,
                     specs = current.specs,
