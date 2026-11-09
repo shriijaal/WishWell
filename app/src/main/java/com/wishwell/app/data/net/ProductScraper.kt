@@ -697,13 +697,17 @@ class ProductScraper(
         extractIttiPricing(html, host, path, pageUrl)?.let { return it }
 
         // DBS+/Next.js storefronts (e.g. sharmazacoustic.com): /product/<id> with RSC-escaped JSON
+        // NOTE: use regular (non-raw) strings here so $productId / $field are interpolated.
+        // Raw strings """...""" would treat them as literal text and the regex would never match.
         val productId = Regex("""/product/(\d+)""").find(path)?.groupValues?.getOrNull(1)
         if (productId != null) {
             val idPatterns = listOf(
-                Regex("""\\"id\\"\\s*:\\s*\\"$productId\\""""),
-                Regex(""""id"\s*:\s*"$productId""""),
-                Regex("""\\"id\\"\\s*:\\s*$productId\b"""),
-                Regex(""""id"\s*:\s*$productId\b""")
+                // \"id\" : \"<id>\"  or  "id" : "<id>"  (RSC-escaped or plain, quoted value)
+                Regex("\\\\?\\\"id\\\\?\\\"\\s*:\\\\?\\\"$productId\\\\?\\\""),
+                Regex("\"id\"\\s*:\\s*\"$productId\""),
+                // \"id\" : <id>  or  "id" : <id>  (unquoted numeric value)
+                Regex("\\\\?\\\"id\\\\?\\\"\\s*:\\s*$productId\\\\b"),
+                Regex("\"id\"\\s*:\\s*$productId\\\\b")
             )
             for (idPattern in idPatterns) {
                 val match = idPattern.find(html) ?: continue
@@ -711,7 +715,7 @@ class ProductScraper(
                 val end = (match.range.last + 3500).coerceAtMost(html.length)
                 val window = html.substring(start, end)
                 fun num(field: String): Double? {
-                    val p = Regex("""\\?"$field\\?"\s*:\s*"?([0-9][0-9,]*(?:\.[0-9]+)?)"?""")
+                    val p = Regex("\\\\?\\\"$field\\\\?\\\"\\s*:\\s*\\\"?([0-9][0-9,]*(?:\\.[0-9]+)?)\\\"?")
                     return p.findAll(window).mapNotNull { MoneyParser.parse(it.groupValues[1]) }
                         .firstOrNull { it > 0.0 }
                 }
