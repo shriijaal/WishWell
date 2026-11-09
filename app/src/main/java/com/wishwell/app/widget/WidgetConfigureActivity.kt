@@ -22,8 +22,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -176,10 +174,10 @@ private fun WidgetSettingsEditor(
         color = colors.onSurface
     )
     Spacer(modifier = Modifier.height(8.dp))
-    LazyColumn(
-        modifier = Modifier.fillMaxHeight()
+    Column(
+        modifier = Modifier.fillMaxWidth()
     ) {
-        items(styles, key = { it.first }) { (key, label) ->
+        styles.forEach { (key, label) ->
             val selected = settings.style == key
             Row(
                 modifier = Modifier
