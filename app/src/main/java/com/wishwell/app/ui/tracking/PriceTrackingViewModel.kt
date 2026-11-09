@@ -2,6 +2,7 @@ package com.wishwell.app.ui.tracking
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.wishwell.app.data.model.ItemCategoryTag
 import com.wishwell.app.data.model.ItemWithStats
 import com.wishwell.app.di.AppContainer
 import kotlinx.coroutines.delay
@@ -33,7 +34,8 @@ data class PriceTrackingUiState(
     val loading: Boolean = true,
     val summary: TrackingSummary = TrackingSummary(),
     val selectedIds: Set<Long> = emptySet(),
-    val categories: List<com.wishwell.app.data.model.CategoryWithCount> = emptyList()
+    val categories: List<com.wishwell.app.data.model.CategoryWithCount> = emptyList(),
+    val tagMap: Map<Long, Set<Long>> = emptyMap()
 ) {
     val hasAnyItems: Boolean get() = allItems.isNotEmpty()
     val hasSignals: Boolean get() =
@@ -49,12 +51,15 @@ class PriceTrackingViewModel(private val container: AppContainer) : ViewModel() 
     private val selectedIds = MutableStateFlow<Set<Long>>(emptySet())
 
     val uiState: StateFlow<PriceTrackingUiState> = combine(
-        repo.observeItems(),
+        repo.observeItems().combine(repo.observeItemTags()) { items, tags ->
+            val tagMap = tags.groupBy { it.itemId }.mapValues { it.value.map { it.categoryId }.toSet() }
+            items to tagMap
+        },
         repo.observeCategories(),
         refreshing,
         message,
         selectedIds
-    ) { items, categories, isRefreshing, msg, selected ->
+    ) { (items, tagMap), categories, isRefreshing, msg, selected ->
         val validIds = items.mapTo(mutableSetOf()) { it.item.id }
         val prunedSelected = selected.intersect(validIds)
         val atLow = items.filter { it.isAtLowest }.sortedByDescending { it.item.updatedAt }
@@ -86,7 +91,8 @@ class PriceTrackingViewModel(private val container: AppContainer) : ViewModel() 
             loading = false,
             summary = summarize(items),
             selectedIds = prunedSelected,
-            categories = categories
+            categories = categories,
+            tagMap = tagMap
         )
     }.stateIn(
         scope = viewModelScope,
@@ -139,12 +145,18 @@ class PriceTrackingViewModel(private val container: AppContainer) : ViewModel() 
         }
     }
 
-    fun moveSelectedToCategory(categoryId: Long?) {
+    fun moveSelectedToCategory(categoryIds: Set<Long>) {
         val ids = selectedIds.value
         if (ids.isEmpty()) return
         viewModelScope.launch {
-            runCatching { repo.setItemsTags(ids, categoryId?.let { setOf(it) } ?: emptySet()) }
-                .onSuccess { postMessage("Moved ${ids.size} item${if (ids.size == 1) "" else "s"}.") }
+            runCatching { repo.setItemsTags(ids, categoryIds) }
+                .onSuccess {
+                    when {
+                        categoryIds.isEmpty() -> postMessage("Removed tags from ${ids.size} item${if (ids.size == 1) "" else "s"}.")
+                        categoryIds.size == 1 -> postMessage("Moved ${ids.size} item${if (ids.size == 1) "" else "s"} to 1 collection.")
+                        else -> postMessage("Moved ${ids.size} item${if (ids.size == 1) "" else "s"} to ${categoryIds.size} collections.")
+                    }
+                }
                 .onFailure { postMessage(it.message ?: "Couldn't move selected items.") }
             selectedIds.value = emptySet()
         }

@@ -246,12 +246,18 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    fun moveSelectedToCategory(categoryId: Long?) {
+    fun moveSelectedToCategory(categoryIds: Set<Long>) {
         val ids = selectedIds.value
         if (ids.isEmpty()) return
         viewModelScope.launch {
-            runCatching { repo.setItemsTags(ids, categoryId?.let { setOf(it) } ?: emptySet()) }
-                .onSuccess { postMessage("Moved ${ids.size} item${if (ids.size == 1) "" else "s"}.") }
+            runCatching { repo.setItemsTags(ids, categoryIds) }
+                .onSuccess {
+                    when {
+                        categoryIds.isEmpty() -> postMessage("Removed tags from ${ids.size} item${if (ids.size == 1) "" else "s"}.")
+                        categoryIds.size == 1 -> postMessage("Moved ${ids.size} item${if (ids.size == 1) "" else "s"} to 1 collection.")
+                        else -> postMessage("Moved ${ids.size} item${if (ids.size == 1) "" else "s"} to ${categoryIds.size} collections.")
+                    }
+                }
                 .onFailure { postMessage(it.message ?: "Couldn't move selected items.") }
             selectedIds.value = emptySet()
         }

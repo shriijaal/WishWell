@@ -56,12 +56,12 @@ import com.wishwell.app.di.AppContainer
 import com.wishwell.app.ui.components.ConfirmDialog
 import com.wishwell.app.ui.components.EmptyState
 import com.wishwell.app.ui.components.LoadingSpinner
+import com.wishwell.app.ui.components.MoveToCollectionSheet
 import com.wishwell.app.ui.components.NoticeBar
 import com.wishwell.app.ui.components.ReorderItemsSheet
 import com.wishwell.app.ui.components.SectionLabel
 import com.wishwell.app.ui.components.StatTile
 import com.wishwell.app.ui.components.SwipeableWishCard
-import com.wishwell.app.ui.components.categoryIcon
 import com.wishwell.app.ui.theme.LocalWishExtraColors
 import com.wishwell.app.util.currencyDisplayName
 import com.wishwell.app.util.formatMoney
@@ -91,12 +91,15 @@ fun PriceTrackingScreen(
     }
     var pendingDeleteId by remember { mutableStateOf<Long?>(null) }
     var showBulkDeleteConfirm by remember { mutableStateOf(false) }
-    var showMoveDialog by remember { mutableStateOf(false) }
+    var showMoveSheet by remember { mutableStateOf(false) }
     var showReorderSheet by remember { mutableStateOf(false) }
     var revealedItemId by remember { mutableStateOf<Long?>(null) }
     val listState = rememberLazyListState()
     LaunchedEffect(state.selectionMode) {
-        if (state.selectionMode) revealedItemId = null else showReorderSheet = false
+        if (state.selectionMode) revealedItemId = null else {
+            showReorderSheet = false
+            showMoveSheet = false
+        }
     }
     LaunchedEffect(listState.isScrollInProgress) { if (listState.isScrollInProgress) revealedItemId = null }
 
@@ -395,7 +398,7 @@ fun PriceTrackingScreen(
                 onCancel = viewModel::clearSelection,
                 onSelectAll = { viewModel.selectAll(state.allItems.map { it.item.id }) },
                 onReorder = { showReorderSheet = true },
-                onMove = { showMoveDialog = true },
+                onMove = { showMoveSheet = true },
                 onRemove = { showBulkDeleteConfirm = true },
                 floating = true
             )
@@ -425,34 +428,16 @@ fun PriceTrackingScreen(
                 onDismiss = { showBulkDeleteConfirm = false }
             )
         }
-        if (showMoveDialog && state.selectionMode) {
-            AlertDialog(
-                onDismissRequest = { showMoveDialog = false },
-                title = { Text("Move to collection") },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        TextButton(onClick = {
-                            viewModel.moveSelectedToCategory(null)
-                            showMoveDialog = false
-                        }, modifier = Modifier.fillMaxWidth()) {
-                            Text("Unsorted", modifier = Modifier.fillMaxWidth())
-                        }
-                        state.categories.forEach { cat ->
-                            TextButton(onClick = {
-                                viewModel.moveSelectedToCategory(cat.category.id)
-                                showMoveDialog = false
-                            }, modifier = Modifier.fillMaxWidth()) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(categoryIcon(cat.category.emoji, cat.category.name), contentDescription = null, modifier = Modifier.size(16.dp), tint = extra.muted)
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(cat.category.name)
-                                }
-                            }
-                        }
-                    }
+        if (showMoveSheet && state.selectionMode) {
+            MoveToCollectionSheet(
+                categories = state.categories,
+                selectedItemIds = state.selectedIds,
+                tagMap = state.tagMap,
+                onSave = { categoryIds ->
+                    viewModel.moveSelectedToCategory(categoryIds)
+                    showMoveSheet = false
                 },
-                confirmButton = {},
-                dismissButton = { TextButton(onClick = { showMoveDialog = false }) { Text("Cancel") } }
+                onDismiss = { showMoveSheet = false }
             )
         }
         if (showReorderSheet && state.selectionMode) {
