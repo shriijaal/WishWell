@@ -148,14 +148,18 @@ internal fun WidgetListContent(
             )
             Box(
                 modifier = GlanceModifier
-                    .background(ColorProvider(colors.sunken.copy(alpha = alpha)))
+                    .background(accent)
                     .cornerRadius(10.dp)
-                    .padding(horizontal = 8.dp, vertical = 3.dp)
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
                     .clickable(actionStartActivity(syncWidgetIntent()))
             ) {
                 Text(
                     text = "Sync",
-                    style = TextStyle(color = accent, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                    style = TextStyle(
+                        color = ColorProvider(colors.paper),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    )
                 )
             }
         }
@@ -165,7 +169,7 @@ internal fun WidgetListContent(
             style = TextStyle(color = ColorProvider(colors.muted), fontSize = 11.sp),
             maxLines = 1
         )
-        Spacer(modifier = GlanceModifier.height(12.dp))
+        Spacer(modifier = GlanceModifier.height(16.dp))
         if (entries.isEmpty()) {
             Box(
                 modifier = GlanceModifier
@@ -184,7 +188,7 @@ internal fun WidgetListContent(
             LazyColumn(modifier = GlanceModifier.fillMaxSize()) {
                 items(entries, itemId = { it.id }) { entry ->
                     EntryRow(entry = entry, colors = colors, alpha = alpha)
-                    Spacer(modifier = GlanceModifier.height(10.dp))
+                    Spacer(modifier = GlanceModifier.height(16.dp))
                 }
             }
         }
@@ -202,7 +206,7 @@ private fun EntryRow(
             .fillMaxWidth()
             .background(ColorProvider(colors.sunken.copy(alpha = alpha)))
             .cornerRadius(12.dp)
-            .padding(8.dp)
+            .padding(horizontal = 10.dp, vertical = 8.dp)
             .clickable(actionStartActivity(appIntent(entry.id))),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -234,7 +238,9 @@ private fun EntryRow(
                 Text(
                     text = badge,
                     style = TextStyle(
-                        color = if (entry.isDrop) ColorProvider(colors.forest) else ColorProvider(colors.muted),
+                        color = ColorProvider(
+                            if (entry.isDrop) Color(0xFF1F3D2E) else colors.ink
+                        ),
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold
                     )
