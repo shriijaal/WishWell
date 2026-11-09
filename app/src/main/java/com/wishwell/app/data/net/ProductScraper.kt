@@ -77,6 +77,11 @@ class ProductScraper(
         val offers = jsonLd?.opt("offers")
         val offerPrice = priceForOffers(offers)
         val offerCurrency = currencyForOffers(offers)
+        // Only treat JSON-LD highPrice as a list/original price when offers is a single object
+        // (e.g. Daraz single-product PDP). For variant arrays, highPrice reflects a price range,
+        // not a discount — see commit af9e0fb.
+        val offersIsSingle = offers is JSONObject && offers != JSONObject.NULL
+        val aggregateHigh = if (offersIsSingle) highPriceForOffers(offers) else null
         val originalPrice = extractOriginalPrice(document)
 
         val ogTitle = document.metaContent("og:title")
@@ -104,7 +109,7 @@ class ProductScraper(
             ?: normalizeCurrency(document.metaContent("og:price:currency"))
             ?: inferCurrency(document, host)
 
-        val urlHints = extractPriceHintsFromUrl(rawUrl)
+        val urlHints = extractPriceHintsFromUrl(finalUrl)
         val (domCurrent, domOriginal) = extractDomProductPrices(document)
         val currencyResolved = currency ?: scriptData?.currencyCode ?: stores.defaultCurrencyFor(host)
 
@@ -115,12 +120,14 @@ class ProductScraper(
             ?: scriptData?.price
             ?: domCurrent
 
-        // `aggregateHigh` (JSON-LD highPrice/offer range) is intentionally not used as a standalone
-        // list/original price: on variant/fabric products it reflects a price range, not a discount.
+        // `aggregateHigh` (JSON-LD highPrice/offer range) is used as list/original price only for
+        // single-offer JSON-LD (e.g. Daraz). On variant/fabric products it reflects a price range,
+        // not a discount — those cases return null above.
         var listPrice = originalPrice
             ?: scriptData?.listPrice
             ?: urlHints.second
             ?: domOriginal
+            ?: aggregateHigh
 
         val urlPrice = urlHints.first
         if (urlPrice != null) {
@@ -866,11 +873,69 @@ class ProductScraper(
         )
     }
 
+    private fun extractMuditaPricing(html: String, host: String): ScriptPricing? {
+        if (!host.contains("mudita.com.np")) return null
+
+        // Mudita is a WooCommerce store; look for wc-product data or JSON-LD price pairs.
+        // Try __NEXT_DATA__ or similar embedded JSON first.
+        val nextData = Regex("""<script[^>]+id=["']__NEXT_DATA__["'][^>]*>(.*?)</script>""", RegexOption.DOT_MATCHES_ALL)
+            .find(html)?.groupValues?.getOrNull(1)?.trim()
+        if (nextData?.isNotEmpty() == true) {
+            val root = runCatching { JSONObject(nextData) }.getOrNull() ?: return null
+
+            fun optPrice(obj: JSONObject, key: String): Double? {
+                if (!obj.has(key) || obj.isNull(key)) return null
+                return MoneyParser.parse(obj.opt(key)?.toString())?.takeIf { it > 0.0 }
+            }
+
+            fun walkPrice(obj: Any?): Pair<Double, Double?>? {
+                when (obj) {
+                    is JSONObject -> {
+                        val sale = optPrice(obj, "sale_price")
+                            ?: optPrice(obj, "selling_price")
+                            ?: optPrice(obj, "current_price")
+                            ?: optPrice(obj, "price")
+                        val list = optPrice(obj, "regular_price")
+                            ?: optPrice(obj, "original_price")
+                            ?: optPrice(obj, "compare_at_price")
+                            ?: optPrice(obj, "list_price")
+                        if (sale != null && list != null && list > sale + 0.01) {
+                            return sale to list
+                        }
+                        if (sale != null) return sale to null
+                        // Recurse into nested objects/arrays
+                        for (key in obj.keys()) {
+                            val v = obj.opt(key)
+                            walkPrice(v)?.let { return it }
+                        }
+                    }
+                    is JSONArray -> {
+                        for (i in 0 until obj.length()) {
+                            walkPrice(obj.opt(i))?.let { return it }
+                        }
+                    }
+                }
+                return null
+            }
+
+            walkPrice(root)?.let { (sale, list) ->
+                return ScriptPricing(
+                    price = sale,
+                    listPrice = list,
+                    currencyCode = "NPR"
+                )
+            }
+        }
+        return null
+    }
+
     private fun extractScriptPricing(document: Document, pageUrl: String = ""): ScriptPricing? {
         val html = document.outerHtml()
+        val host = runCatching { java.net.URI(pageUrl).host?.lowercase().orEmpty() }.getOrElse { "" }
 
         extractTargetedScriptPricing(html, pageUrl)?.let { return it }
-        // Daraz/Lazada: pdpTrackingData = "{\"pdt_price\":\"Rs. 4,065\",...}"
+        extractJeeveePricing(html, host)?.let { return it }
+        extractMuditaPricing(html, host)?.let { return it }
         val tracking = Regex("""pdpTrackingData\s*=\s*"((?:\\.|[^"\\])*)"""")
             .find(html)?.groupValues?.getOrNull(1)?.let(::unescapeJsString)
             ?: Regex("""pdpTrackingData\s*=\s*(\{.*?\})\s*;""", RegexOption.DOT_MATCHES_ALL)
