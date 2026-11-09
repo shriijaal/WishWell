@@ -106,6 +106,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.wishwell.app.data.model.Category
 import com.wishwell.app.data.model.ItemWithStats
 import com.wishwell.app.di.AppContainer
 import com.wishwell.app.ui.components.DealBadge
@@ -222,7 +223,7 @@ fun WishlistScreen(
             item(key = "filters") {
                 FilterBar(
                     state = state,
-                    onCategory = viewModel::setCategory,
+                    onCategoryToggle = viewModel::toggleCategory,
                     onAttention = viewModel::setAttentionFilter
                 )
             }
@@ -235,7 +236,7 @@ fun WishlistScreen(
                 ) {
                     val filterNote = buildList {
                         if (state.query.isNotBlank()) add("search")
-                        if (state.categoryId != null) add("collection")
+                        if (state.categoryIds.isNotEmpty()) add("${state.categoryIds.size} categories")
                         if (state.attentionFilter != AttentionFilter.ALL) add("filter")
                     }
                     Text(
@@ -287,6 +288,17 @@ fun WishlistScreen(
             state.items.any(::needsAttention) &&
             state.items.any { !needsAttention(it) }
 
+        val multiCategory = state.categoryIds.size >= 2
+        val categoryGroups: List<Pair<Category?, List<ItemWithStats>>> = if (multiCategory) {
+            state.items.groupBy { it.item.categoryId }
+                .entries
+                .map { (catId, catItems) ->
+                    val category = state.categories.firstOrNull { it.category.id == catId }?.category
+                    category to catItems.sortedByDescending { it.item.createdAt }
+                }
+                .sortedBy { (cat, _) -> cat?.name ?: "Unsorted" }
+        } else emptyList()
+
         when {
             state.loading -> item(key = "loading") {
                 Box(
@@ -320,7 +332,43 @@ fun WishlistScreen(
             }
 
             viewMode == "grid" -> {
-                if (showAttentionSection) {
+                if (multiCategory) {
+                    categoryGroups.forEachIndexed { index, (category, catItems) ->
+                        val catKey = "cat-grid-$index"
+                        item(key = catKey) {
+                            SectionLabel(
+                                text = (category?.name ?: "Unsorted").uppercase(),
+                                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 4.dp),
+                                trailing = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = "${catItems.size}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = extra.muted
+                                        )
+                                        IconButton(onClick = { toggleSection(catKey) }) {
+                                            Icon(
+                                                imageVector = if (sectionExpanded[catKey] ?: true) Icons.Rounded.ExpandMore else Icons.Rounded.ExpandLess,
+                                                contentDescription = if (sectionExpanded[catKey] ?: true) "Collapse ${category?.name ?: "Unsorted"}" else "Expand ${category?.name ?: "Unsorted"}",
+                                                tint = extra.muted
+                                            )
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                        gridRows(
+                            items = catItems,
+                            keyPrefix = catKey,
+                            selectedIds = state.selectedIds,
+                            selectionMode = state.selectionMode,
+                            onOpenItem = onOpenItem,
+                            onToggleSelection = viewModel::toggleSelection,
+                            onEnterSelection = viewModel::enterSelection,
+                            expanded = sectionExpanded[catKey] ?: true
+                        )
+                    }
+                } else if (showAttentionSection) {
                     val attention = state.items.filter(::needsAttention)
                     val rest = state.items.filter { !needsAttention(it) }
                     item(key = "section-attention") {
@@ -394,7 +442,43 @@ fun WishlistScreen(
             }
 
             viewMode == "carousel" -> {
-                if (showAttentionSection) {
+                if (multiCategory) {
+                    categoryGroups.forEachIndexed { index, (category, catItems) ->
+                        val catKey = "cat-carousel-$index"
+                        item(key = catKey) {
+                            SectionLabel(
+                                text = (category?.name ?: "Unsorted").uppercase(),
+                                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 4.dp),
+                                trailing = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = "${catItems.size}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = extra.muted
+                                        )
+                                        IconButton(onClick = { toggleSection(catKey) }) {
+                                            Icon(
+                                                imageVector = if (sectionExpanded[catKey] ?: true) Icons.Rounded.ExpandMore else Icons.Rounded.ExpandLess,
+                                                contentDescription = if (sectionExpanded[catKey] ?: true) "Collapse ${category?.name ?: "Unsorted"}" else "Expand ${category?.name ?: "Unsorted"}",
+                                                tint = extra.muted
+                                            )
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                        carouselRows(
+                            items = catItems,
+                            keyPrefix = catKey,
+                            selectedIds = state.selectedIds,
+                            selectionMode = state.selectionMode,
+                            onOpenItem = onOpenItem,
+                            onToggleSelection = viewModel::toggleSelection,
+                            onEnterSelection = viewModel::enterSelection,
+                            expanded = sectionExpanded[catKey] ?: true
+                        )
+                    }
+                } else if (showAttentionSection) {
                     val attention = state.items.filter(::needsAttention)
                     val rest = state.items.filter { !needsAttention(it) }
                     item(key = "section-attention") {
@@ -468,7 +552,59 @@ fun WishlistScreen(
             }
 
             else -> {
-                if (showAttentionSection) {
+                if (multiCategory) {
+                    categoryGroups.forEachIndexed { index, (category, catItems) ->
+                        val catKey = "cat-list-$index"
+                        item(key = catKey) {
+                            SectionLabel(
+                                text = (category?.name ?: "Unsorted").uppercase(),
+                                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 4.dp),
+                                trailing = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = "${catItems.size}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = extra.muted
+                                        )
+                                        IconButton(onClick = { toggleSection(catKey) }) {
+                                            Icon(
+                                                imageVector = if (sectionExpanded[catKey] ?: true) Icons.Rounded.ExpandMore else Icons.Rounded.ExpandLess,
+                                                contentDescription = if (sectionExpanded[catKey] ?: true) "Collapse ${category?.name ?: "Unsorted"}" else "Expand ${category?.name ?: "Unsorted"}",
+                                                tint = extra.muted
+                                            )
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                        items(if (sectionExpanded[catKey] ?: true) catItems else emptyList(), key = { "$catKey-${it.item.id}" }) { item ->
+                            val id = item.item.id
+                            val selected = id in state.selectedIds
+                            SwipeableWishCard(
+                                item = item,
+                                onClick = {
+                                    when {
+                                        revealedItemId != null && revealedItemId != id -> revealedItemId = null
+                                        state.selectionMode -> viewModel.toggleSelection(id)
+                                        else -> onOpenItem(id)
+                                    }
+                                },
+                                onEdit = { onEditItem(id) },
+                                onRemove = { pendingDeleteId = id },
+                                selected = selected,
+                                selectionMode = state.selectionMode,
+                                onLongClick = {
+                                    revealedItemId = null
+                                    if (!state.selectionMode) viewModel.enterSelection(id) else viewModel.toggleSelection(id)
+                                },
+                                swipeEnabled = !state.selectionMode,
+                                isRevealed = revealedItemId == id,
+                                onRevealedChange = { open -> revealedItemId = if (open) id else if (revealedItemId == id) null else revealedItemId },
+                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 5.dp)
+                            )
+                        }
+                    }
+                } else if (showAttentionSection) {
                     val attention = state.items.filter(::needsAttention)
                     val rest = state.items.filter { !needsAttention(it) }
                     item(key = "section-attention") {
@@ -1419,18 +1555,19 @@ private fun LazyListScope.carouselRows(
 @Composable
 private fun FilterBar(
     state: WishlistUiState,
-    onCategory: (Long?) -> Unit,
+    onCategoryToggle: (Long) -> Unit,
     onAttention: (AttentionFilter) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
     val hasUnsorted = state.allItems.any { it.item.categoryId == null }
-    val activeCategory = state.categories.firstOrNull { it.category.id == state.categoryId }?.category
+    val selectedCategoryIds = state.categoryIds
+    val selectedCategories = state.categories.filter { selectedCategoryIds.contains(it.category.id) }
     val categoryLabel = when {
-        state.categoryId == -1L -> "Unsorted"
-        activeCategory != null -> activeCategory.name
-        else -> "All items"
+        selectedCategoryIds.isEmpty() -> "All items"
+        selectedCategoryIds.size == 1 && selectedCategories.isNotEmpty() -> selectedCategories.first().category.name
+        else -> "${selectedCategoryIds.size} categories"
     }
-    val categoryGlyph = if (state.categoryId == -1L) Icons.Rounded.Category else categoryIcon(activeCategory?.emoji, activeCategory?.name)
+    val categoryGlyph = if (selectedCategoryIds.isEmpty()) Icons.Rounded.Category else categoryIcon(selectedCategories.firstOrNull()?.category?.emoji, selectedCategories.firstOrNull()?.category?.name)
     val onSale = state.attentionFilter == AttentionFilter.ON_SALE
 
     Row(
@@ -1444,8 +1581,8 @@ private fun FilterBar(
         Box {
             WishPill(
                 text = categoryLabel,
-                selected = state.categoryId != null,
-                onClick = { expanded = true },
+                selected = selectedCategoryIds.isNotEmpty(),
+                onClick = { expanded = !expanded },
                 leadingIcon = categoryGlyph,
                 trailingIcon = Icons.Rounded.ExpandMore
             )
@@ -1453,19 +1590,21 @@ private fun FilterBar(
                 DropdownMenuItem(
                     text = { Text("All items") },
                     onClick = {
-                        expanded = false
-                        onCategory(null)
+                        onCategoryToggle(-999L) // sentinel: clear all
                     },
                     leadingIcon = {
                         Icon(Icons.Rounded.Category, contentDescription = null, modifier = Modifier.size(18.dp))
+                    },
+                    trailingIcon = {
+                        if (selectedCategoryIds.isEmpty()) Icons.Rounded.Check else null
                     }
                 )
                 state.categories.forEach { category ->
+                    val isSelected = selectedCategoryIds.contains(category.category.id)
                     DropdownMenuItem(
                         text = { Text(category.category.name) },
                         onClick = {
-                            expanded = false
-                            onCategory(category.category.id)
+                            onCategoryToggle(category.category.id)
                         },
                         leadingIcon = {
                             Icon(
@@ -1473,18 +1612,24 @@ private fun FilterBar(
                                 contentDescription = null,
                                 modifier = Modifier.size(18.dp)
                             )
+                        },
+                        trailingIcon = {
+                            if (isSelected) Icons.Rounded.Check else null
                         }
                     )
                 }
                 if (hasUnsorted) {
+                    val isUnsortedSelected = selectedCategoryIds.contains(-1L)
                     DropdownMenuItem(
                         text = { Text("Unsorted") },
                         onClick = {
-                            expanded = false
-                            onCategory(-1L)
+                            onCategoryToggle(-1L)
                         },
                         leadingIcon = {
                             Icon(Icons.Rounded.Category, contentDescription = null, modifier = Modifier.size(18.dp))
+                        },
+                        trailingIcon = {
+                            if (isUnsortedSelected) Icons.Rounded.Check else null
                         }
                     )
                 }

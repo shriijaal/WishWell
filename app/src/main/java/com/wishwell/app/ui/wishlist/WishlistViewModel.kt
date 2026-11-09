@@ -46,7 +46,7 @@ data class WishlistUiState(
     val allItems: List<ItemWithStats> = emptyList(),
     val categories: List<CategoryWithCount> = emptyList(),
     val query: String = "",
-    val categoryId: Long? = null,
+    val categoryIds: Set<Long> = emptySet(),
     val sort: SortMode = SortMode.RECENT,
     val attentionFilter: AttentionFilter = AttentionFilter.ALL,
     val refreshing: Boolean = false,
@@ -57,13 +57,13 @@ data class WishlistUiState(
     val readNotificationKeys: Set<String> = emptySet()
 ) {
     val hasAnyItems: Boolean get() = allItems.isNotEmpty()
-    val isFiltered: Boolean get() = query.isNotBlank() || categoryId != null || attentionFilter != AttentionFilter.ALL
+    val isFiltered: Boolean get() = query.isNotBlank() || categoryIds.isNotEmpty() || attentionFilter != AttentionFilter.ALL
     val selectionMode: Boolean get() = selectedIds.isNotEmpty()
 }
 
 private data class Filters(
     val query: String,
-    val categoryId: Long?,
+    val categoryIds: Set<Long>,
     val sort: SortMode,
     val attentionFilter: AttentionFilter
 )
@@ -74,14 +74,14 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
     private val prefs = container.prefs
 
     private val query = MutableStateFlow("")
-    private val categoryFilter = MutableStateFlow<Long?>(null)
+    private val categoryFilters = MutableStateFlow<Set<Long>>(emptySet())
     private val sort = MutableStateFlow(SortMode.RECENT)
     private val attentionFilter = MutableStateFlow(AttentionFilter.ALL)
     private val refreshing = MutableStateFlow(false)
     private val message = MutableStateFlow<String?>(null)
     private val selectedIds = MutableStateFlow<Set<Long>>(emptySet())
 
-    private val filters = combine(query, categoryFilter, sort, attentionFilter) { q, c, s, a ->
+    private val filters = combine(query, categoryFilters, sort, attentionFilter) { q, c, s, a ->
         Filters(q, c, s, a)
     }
     private val status = combine(refreshing, message, prefs.readNotificationKeys) { r, m, read -> Triple(r, m, read) }
@@ -102,10 +102,13 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
                 item.categoryName.orEmpty()
             ).any { it.contains(f.query, ignoreCase = true) }
 
-            val matchesCategory = when (f.categoryId) {
-                null -> true
-                -1L -> item.item.categoryId == null
-                else -> item.item.categoryId == f.categoryId
+            val matchesCategory = when {
+                f.categoryIds.isEmpty() -> true
+                else -> {
+                    val itemCat = item.item.categoryId
+                    if (itemCat == null) f.categoryIds.contains(-1L)
+                    else f.categoryIds.contains(itemCat)
+                }
             }
 
             val matchesAttention = when (f.attentionFilter) {
@@ -129,7 +132,7 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
             allItems = items,
             categories = categories,
             query = f.query,
-            categoryId = f.categoryId,
+            categoryIds = f.categoryIds,
             sort = f.sort,
             attentionFilter = f.attentionFilter,
             refreshing = s.first,
@@ -149,8 +152,19 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
         query.value = value
     }
 
-    fun setCategory(id: Long?) {
-        categoryFilter.value = id
+    fun toggleCategory(id: Long) {
+        if (id == -999L) {
+            // sentinel: clear all category filters
+            categoryFilters.value = emptySet()
+            return
+        }
+        val current = categoryFilters.value.toMutableSet()
+        if (!current.add(id)) current.remove(id)
+        categoryFilters.value = current
+    }
+
+    fun clearCategories() {
+        categoryFilters.value = emptySet()
     }
 
     fun setSort(mode: SortMode) {
@@ -163,7 +177,7 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
 
     fun clearFilters() {
         query.value = ""
-        categoryFilter.value = null
+        categoryFilters.value = emptySet()
         attentionFilter.value = AttentionFilter.ALL
     }
 
