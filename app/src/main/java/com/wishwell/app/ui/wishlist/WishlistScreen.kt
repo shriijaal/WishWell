@@ -120,6 +120,7 @@ import com.wishwell.app.ui.components.ProductThumb
 import com.wishwell.app.ui.components.ReorderItemsSheet
 import com.wishwell.app.ui.components.RollingPriceText
 import com.wishwell.app.ui.components.SectionLabel
+import com.wishwell.app.ui.components.StoreLogo
 import com.wishwell.app.ui.components.SwipeableWishCard
 import com.wishwell.app.ui.components.WishCard
 import com.wishwell.app.ui.components.WishPill
@@ -1568,6 +1569,15 @@ private fun FilterBar(
     }
     val categoryGlyph = if (selectedCategoryIds.isEmpty()) Icons.Rounded.Category else categoryIcon(selectedCategories.firstOrNull()?.category?.emoji, selectedCategories.firstOrNull()?.category?.name)
     val selectedStores = state.selectedStores
+    val storeUrls = remember(state.allItems) {
+        buildMap<String, String> {
+            state.allItems.forEach { item ->
+                val name = item.item.storeName.trim()
+                if (name.isNotBlank() && !containsKey(name)) put(name, item.item.productUrl)
+            }
+        }
+    }
+    val singleStore = if (selectedStores.size == 1) selectedStores.first() else null
     val storeLabel = when {
         selectedStores.isEmpty() -> "All stores"
         selectedStores.size == 1 -> selectedStores.first()
@@ -1646,7 +1656,16 @@ private fun FilterBar(
                 text = storeLabel,
                 selected = selectedStores.isNotEmpty(),
                 onClick = { storeExpanded = !storeExpanded },
-                leadingIcon = Icons.Rounded.Storefront,
+                leadingIcon = if (singleStore != null) null else Icons.Rounded.Storefront,
+                leadingContent = singleStore?.let {
+                    {
+                        StoreLogo(
+                            productUrl = storeUrls[it],
+                            storeName = it,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                },
                 trailingIcon = Icons.Rounded.ExpandMore
             )
             DropdownMenu(expanded = storeExpanded, onDismissRequest = { storeExpanded = false }) {
@@ -1666,7 +1685,11 @@ private fun FilterBar(
                         text = { Text(store) },
                         onClick = { onStoreToggle(store) },
                         leadingIcon = {
-                            Icon(Icons.Rounded.Storefront, contentDescription = null, modifier = Modifier.size(18.dp))
+                            StoreLogo(
+                                productUrl = storeUrls[store],
+                                storeName = store,
+                                modifier = Modifier.size(20.dp)
+                            )
                         },
                         trailingIcon = {
                             if (isSelected) Icons.Rounded.Check else null
@@ -1721,7 +1744,8 @@ private fun WishlistGridCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(110.dp),
-                    shape = RoundedCornerShape(14.dp)
+                    shape = RoundedCornerShape(14.dp),
+                    storeUrl = item.item.productUrl
                 )
                 val badge = when {
                     item.isAtLowest -> "Low" to com.wishwell.app.ui.components.BadgeTone.LOW
@@ -1758,13 +1782,22 @@ private fun WishlistGridCard(
                 }
             }
             Spacer(Modifier.height(8.dp))
-            Text(
-                text = item.item.storeName.uppercase(),
-                style = MaterialTheme.typography.labelSmall,
-                color = extra.muted,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                StoreLogo(
+                    productUrl = item.item.productUrl,
+                    storeName = item.item.storeName,
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(Modifier.width(5.dp))
+                Text(
+                    text = item.item.storeName.uppercase(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = extra.muted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+            }
             Text(
                 text = item.item.title,
                 style = MaterialTheme.typography.titleSmall,

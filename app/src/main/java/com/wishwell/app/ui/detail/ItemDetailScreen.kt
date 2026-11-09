@@ -106,6 +106,7 @@ import com.wishwell.app.ui.components.ProductThumb
 import com.wishwell.app.ui.components.RollingPriceText
 import com.wishwell.app.ui.components.SectionLabel
 import com.wishwell.app.ui.components.StatTile
+import com.wishwell.app.ui.components.StoreLogo
 import com.wishwell.app.ui.components.WishDialog
 import com.wishwell.app.ui.components.WishPill
 import com.wishwell.app.ui.theme.LocalWishExtraColors
@@ -350,12 +351,19 @@ private fun ItemDetailContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(250.dp),
-                shape = RoundedCornerShape(24.dp)
+                shape = RoundedCornerShape(24.dp),
+                storeUrl = item.productUrl
             )
 
             Spacer(Modifier.height(20.dp))
 
             Row(verticalAlignment = Alignment.CenterVertically) {
+                StoreLogo(
+                    productUrl = item.productUrl,
+                    storeName = item.storeName,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(Modifier.width(6.dp))
                 Text(
                     text = item.storeName.uppercase(),
                     style = MaterialTheme.typography.labelSmall,
@@ -814,7 +822,8 @@ private fun ItemDetailContent(
                                     imageUrl = product.imageUrl,
                                     storeName = product.storeName,
                                     modifier = Modifier.fillMaxWidth().height(74.dp),
-                                    shape = RoundedCornerShape(12.dp)
+                                    shape = RoundedCornerShape(12.dp),
+                                    storeUrl = product.productUrl
                                 )
                                 Spacer(Modifier.height(8.dp))
                             } else {
@@ -823,18 +832,35 @@ private fun ItemDetailContent(
                                         imageUrl = product.imageUrl,
                                         storeName = product.storeName,
                                         modifier = Modifier.size(58.dp),
-                                        shape = RoundedCornerShape(12.dp)
+                                        shape = RoundedCornerShape(12.dp),
+                                        storeUrl = product.productUrl
                                     )
                                     Spacer(Modifier.width(10.dp))
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text(product.storeName.uppercase(), style = MaterialTheme.typography.labelSmall, color = extra.muted, maxLines = 1)
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            StoreLogo(
+                                                productUrl = product.productUrl,
+                                                storeName = product.storeName,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                            Spacer(Modifier.width(4.dp))
+                                            Text(product.storeName.uppercase(), style = MaterialTheme.typography.labelSmall, color = extra.muted, maxLines = 1)
+                                        }
                                         Text(product.title, style = MaterialTheme.typography.titleSmall, color = colors.onSurface, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                     }
                                 }
                                 Spacer(Modifier.height(6.dp))
                             }
                             if (compact) {
-                                Text(product.storeName.uppercase(), style = MaterialTheme.typography.labelSmall, color = extra.muted, maxLines = 1)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    StoreLogo(
+                                        productUrl = product.productUrl,
+                                        storeName = product.storeName,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(product.storeName.uppercase(), style = MaterialTheme.typography.labelSmall, color = extra.muted, maxLines = 1)
+                                }
                                 Text(product.title, style = MaterialTheme.typography.labelLarge, color = colors.onSurface, maxLines = 2, minLines = 2, overflow = TextOverflow.Ellipsis)
                                 Spacer(Modifier.height(2.dp))
                             }
@@ -1051,7 +1077,8 @@ private fun ItemDetailContent(
                                             imageUrl = pickItem.item.imageUrl,
                                             storeName = pickItem.item.storeName,
                                             modifier = Modifier.fillMaxWidth().height(72.dp),
-                                            shape = RoundedCornerShape(12.dp)
+                                            shape = RoundedCornerShape(12.dp),
+                                            storeUrl = pickItem.item.productUrl
                                         )
                                     }
                                     Spacer(Modifier.height(8.dp))
@@ -1086,7 +1113,8 @@ private fun ItemDetailContent(
                                             .size(52.dp)
                                             .clip(RoundedCornerShape(12.dp))
                                             .clickable { onOpenItem(pickItem.item.id) },
-                                        shape = RoundedCornerShape(12.dp)
+                                        shape = RoundedCornerShape(12.dp),
+                                        storeUrl = pickItem.item.productUrl
                                     )
                                     Spacer(Modifier.width(12.dp))
                                     Column(modifier = Modifier.weight(1f).clickable { onOpenItem(pickItem.item.id) }) {
@@ -1404,7 +1432,8 @@ private fun SimilarRow(pick: SimilarPick, onClick: () -> Unit) {
                 imageUrl = pick.item.item.imageUrl,
                 storeName = pick.item.item.storeName,
                 modifier = Modifier.size(52.dp),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(12.dp),
+                storeUrl = pick.item.item.productUrl
             )
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {

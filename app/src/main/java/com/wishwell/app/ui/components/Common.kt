@@ -20,6 +20,7 @@ import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
@@ -80,6 +81,7 @@ import kotlin.math.roundToInt
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -90,6 +92,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.compose.AsyncImagePainter
 import coil.request.ImageRequest
 import androidx.compose.ui.platform.LocalContext
 import com.wishwell.app.data.model.ItemWithStats
@@ -123,6 +126,7 @@ fun WishPill(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     leadingIcon: ImageVector? = null,
+    leadingContent: (@Composable () -> Unit)? = null,
     trailingIcon: ImageVector? = null
 ) {
     val colors = MaterialTheme.colorScheme
@@ -138,7 +142,9 @@ fun WishPill(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            if (leadingIcon != null) {
+            if (leadingContent != null) {
+                leadingContent()
+            } else if (leadingIcon != null) {
                 Icon(
                     imageVector = leadingIcon,
                     contentDescription = null,
@@ -197,24 +203,98 @@ fun DealBadge(text: String, tone: BadgeTone = BadgeTone.GOOD) {
     }
 }
 
+private val storeLogoPalette = listOf(
+    Color(0xFFC9D6B6),
+    Color(0xFFE7CDB8),
+    Color(0xFFD8CBB3),
+    Color(0xFFC3CFD2),
+    Color(0xFFDCC9D4),
+    Color(0xFFD4D2B6)
+)
+
+/** Extracts a clean host name (no `www.`) from a product URL, if possible. */
+fun storeHost(productUrl: String?): String? {
+    val raw = productUrl?.trim().orEmpty()
+    if (raw.isBlank()) return null
+    val withScheme = if ("://" in raw) raw else "https://$raw"
+    val host = runCatching { java.net.URI(withScheme).host }
+        .getOrNull()
+        ?.lowercase()
+        ?: return null
+    return host.removePrefix("www.").trim().takeIf { it.isNotBlank() && '.' in it }
+}
+
+/** Google's favicon service returns a real brand mark for most store hosts. */
+fun storeLogoUrl(productUrl: String?): String? {
+    val host = storeHost(productUrl) ?: return null
+    return "https://www.google.com/s2/favicons?sz=128&domain=$host"
+}
+
+/**
+ * Small store brand mark. Falls back to the store's initial when the URL is
+ * missing or the favicon cannot be loaded.
+ */
+@Composable
+fun StoreLogo(
+    productUrl: String?,
+    storeName: String,
+    modifier: Modifier = Modifier,
+    shape: Shape = CircleShape
+) {
+    val extra = LocalWishExtraColors.current
+    val colors = MaterialTheme.colorScheme
+    val logoUrl = remember(productUrl) { storeLogoUrl(productUrl) }
+    var loaded by remember(logoUrl) { mutableStateOf(false) }
+    val letter = storeName.trim().firstOrNull()?.uppercase() ?: "?"
+    val base = storeLogoPalette[
+        ((storeName.hashCode() % storeLogoPalette.size) + storeLogoPalette.size) % storeLogoPalette.size
+    ]
+
+    BoxWithConstraints(
+        modifier = modifier
+            .clip(shape)
+            .background(if (loaded) colors.surface else base)
+            .border(1.dp, extra.hairline, shape),
+        contentAlignment = Alignment.Center
+    ) {
+        val side = minOf(maxWidth, maxHeight)
+        if (!loaded) {
+            Text(
+                text = letter,
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                color = extra.muted,
+                fontSize = (side.value * 0.46f).sp
+            )
+        }
+        if (logoUrl != null) {
+            AsyncImage(
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(logoUrl)
+                    .crossfade(true)
+                    .build(),
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(side * 0.1f),
+                onState = { state -> loaded = state is AsyncImagePainter.State.Success }
+            )
+        }
+    }
+}
+
 @Composable
 fun ProductThumb(
     imageUrl: String?,
     storeName: String,
     modifier: Modifier = Modifier,
-    shape: RoundedCornerShape = RoundedCornerShape(16.dp)
+    shape: RoundedCornerShape = RoundedCornerShape(16.dp),
+    storeUrl: String? = null
 ) {
-    val extra = LocalWishExtraColors.current
-    val palette = listOf(
-        Color(0xFFC9D6B6),
-        Color(0xFFE7CDB8),
-        Color(0xFFD8CBB3),
-        Color(0xFFC3CFD2),
-        Color(0xFFDCC9D4),
-        Color(0xFFD4D2B6)
-    )
-    val base = palette[((storeName.hashCode() % palette.size) + palette.size) % palette.size]
-    val letter = storeName.trim().firstOrNull()?.uppercase() ?: "?"
+    val base = storeLogoPalette[
+        ((storeName.hashCode() % storeLogoPalette.size) + storeLogoPalette.size) % storeLogoPalette.size
+    ]
+    var imageFailed by remember(imageUrl) { mutableStateOf(false) }
 
     Box(
         modifier = modifier
@@ -226,11 +306,13 @@ fun ProductThumb(
             ),
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = letter,
-            style = MaterialTheme.typography.displayMedium,
-            color = extra.muted.copy(alpha = 0.45f)
-        )
+        if (imageUrl.isNullOrBlank() || imageFailed) {
+            StoreLogo(
+                productUrl = storeUrl,
+                storeName = storeName,
+                modifier = Modifier.fillMaxSize(0.46f)
+            )
+        }
         if (!imageUrl.isNullOrBlank()) {
             AsyncImage(
                 model = ImageRequest.Builder(LocalContext.current)
@@ -239,7 +321,8 @@ fun ProductThumb(
                     .build(),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize(),
+                onState = { state -> imageFailed = state is AsyncImagePainter.State.Error }
             )
         }
     }
@@ -251,7 +334,8 @@ fun ProductImageCarousel(
     imageUrls: List<String>,
     storeName: String,
     modifier: Modifier = Modifier,
-    shape: RoundedCornerShape = RoundedCornerShape(16.dp)
+    shape: RoundedCornerShape = RoundedCornerShape(16.dp),
+    storeUrl: String? = null
 ) {
     val urls = imageUrls.filter { it.isNotBlank() }.distinct()
     if (urls.size <= 1) {
@@ -259,7 +343,8 @@ fun ProductImageCarousel(
             imageUrl = urls.firstOrNull(),
             storeName = storeName,
             modifier = modifier,
-            shape = shape
+            shape = shape,
+            storeUrl = storeUrl
         )
         return
     }
@@ -273,7 +358,8 @@ fun ProductImageCarousel(
                 imageUrl = urls[page],
                 storeName = storeName,
                 modifier = Modifier.fillMaxSize(),
-                shape = RoundedCornerShape(0.dp)
+                shape = RoundedCornerShape(0.dp),
+                storeUrl = storeUrl
             )
         }
         Row(
@@ -421,7 +507,8 @@ fun WishCard(
                         imageUrl = item.item.imageUrl,
                         storeName = item.item.storeName,
                         modifier = Modifier.size(92.dp),
-                        shape = RoundedCornerShape(14.dp)
+                        shape = RoundedCornerShape(14.dp),
+                        storeUrl = item.item.productUrl
                     )
                     if (selectionMode) {
                         Box(
@@ -448,6 +535,12 @@ fun WishCard(
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        StoreLogo(
+                            productUrl = item.item.productUrl,
+                            storeName = item.item.storeName,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(5.dp))
                         Text(
                             text = item.item.storeName.uppercase(),
                             style = MaterialTheme.typography.labelSmall,

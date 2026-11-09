@@ -193,7 +193,8 @@ fun AddItemScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(150.dp),
-                    shape = RoundedCornerShape(18.dp)
+                    shape = RoundedCornerShape(18.dp),
+                    storeUrl = state.url
                 )
                 if (state.imageUrls.size > 1) {
                     Spacer(Modifier.height(6.dp))
