@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 data class SettingsUiState(
     val refreshHours: Int = 12,
@@ -282,6 +283,46 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                         }
                     },
                     onFailure = { it.message ?: "Couldn't restore backup." }
+                )
+            )
+        }
+    }
+
+    fun restoreFromDownloads() {
+        if (backupBusy.value) return
+        viewModelScope.launch {
+            backupBusy.value = true
+            val result = runCatching {
+                val downloadDir = File("/storage/emulated/0/Download")
+                val backupFiles = downloadDir.listFiles()
+                    ?.filter { it.name.startsWith("wishwell-backup") && it.name.endsWith(".json") }
+                    ?.sortedByDescending { it.lastModified() }
+                    .orEmpty()
+                val latest = backupFiles.firstOrNull()
+                    ?: error("No backup file found in Downloads folder.")
+                repo.importFromFile(latest.absolutePath)
+            }
+            backupBusy.value = false
+            loadBackupFiles()
+            reportMessage(
+                result.fold(
+                    onSuccess = { r ->
+                        when {
+                            r.itemsAdded == 0 && r.itemsMerged == 0 && r.categoriesAdded == 0 && r.historyPointsAdded == 0 ->
+                                "Nothing new to import."
+                            else -> buildString {
+                                append("Import complete: ")
+                                val parts = mutableListOf<String>()
+                                if (r.itemsAdded > 0) parts += "${r.itemsAdded} item${if (r.itemsAdded == 1) "" else "s"} added"
+                                if (r.itemsMerged > 0) parts += "${r.itemsMerged} merged"
+                                if (r.categoriesAdded > 0) parts += "${r.categoriesAdded} categor${if (r.categoriesAdded == 1) "y" else "ies"} added"
+                                if (r.historyPointsAdded > 0) parts += "${r.historyPointsAdded} price point${if (r.historyPointsAdded == 1) "" else "s"}"
+                                append(parts.joinToString(", ").ifBlank { "done" })
+                                append(".")
+                            }
+                        }
+                    },
+                    onFailure = { it.message ?: "Couldn't restore backup from Downloads." }
                 )
             )
         }

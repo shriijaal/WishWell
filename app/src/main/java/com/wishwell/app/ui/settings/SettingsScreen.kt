@@ -614,6 +614,16 @@ fun SettingsScreen(container: AppContainer) {
             }
             Spacer(Modifier.height(8.dp))
             OutlinedButton(
+                onClick = { viewModel.restoreFromDownloads() },
+                enabled = !backupBusy,
+                shape = CircleShape,
+                modifier = Modifier.fillMaxWidth(),
+                border = BorderStroke(1.dp, extra.hairline)
+            ) {
+                Text(if (backupBusy) "Working…" else "Restore from Downloads", color = if (backupBusy) extra.muted else colors.onSurface)
+            }
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(
                 onClick = viewModel::loadDemo,
                 enabled = state.itemCount == 0,
                 shape = CircleShape,
