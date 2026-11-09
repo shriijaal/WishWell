@@ -895,6 +895,16 @@ class WishlistRepository(
             categoriesAdded++
         }
 
+        // Build old category ID → name map from backup so we can remap old IDs
+        // (from the original DB) to new IDs (matched by name in this DB).
+        val oldCategoryIdToName = mutableMapOf<Long, String>()
+        for (i in 0 until catsArr.length()) {
+            val c = catsArr.optJSONObject(i) ?: continue
+            val id = c.optLong("id", -1L)
+            val name = c.optString("name").takeIf { it.isNotBlank() && id > 0L }
+            if (name != null) oldCategoryIdToName[id] = name.trim()
+        }
+
         // 2) items + history (merge by normalized product URL when available)
         val existingItems = itemDao.getAllItemsRaw()
         val existingByUrl = existingItems
@@ -915,7 +925,14 @@ class WishlistRepository(
                     if (arr.isNull(i)) null else arr.getLong(i)
                 }.toSet()
             } ?: emptySet()
-            val effectiveCategoryIds = if (categoryIds.isNotEmpty()) categoryIds else categoryName?.let { categoryIdByName[it.lowercase()] }?.let { setOf(it) } ?: emptySet()
+            // Map old category IDs from backup to new category IDs (matched by name)
+            val newCategoryIds = categoryIds.mapNotNull { oldId ->
+                oldCategoryIdToName[oldId]?.let { name ->
+                    categoryIdByName[name.trim().lowercase()]
+                }
+            }.toSet()
+            val effectiveCategoryIds = if (newCategoryIds.isNotEmpty()) newCategoryIds
+                else categoryName?.let { categoryIdByName[it.lowercase()] }?.let { setOf(it) } ?: emptySet()
 
             val imageUrls = mutableListOf<String>()
             o.optJSONArray("imageUrls")?.let { arr ->
