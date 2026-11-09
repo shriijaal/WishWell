@@ -183,19 +183,7 @@ internal fun WidgetListContent(
         Spacer(modifier = GlanceModifier.height(16.dp))
 
         if (entries.isEmpty()) {
-            Box(
-                modifier = GlanceModifier
-                    .fillMaxWidth()
-                    .background(ColorProvider(colors.sunken.copy(alpha = alpha)))
-                    .cornerRadius(16.dp)
-                    .padding(20.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = emptyMessage,
-                    style = TextStyle(color = ColorProvider(colors.muted), fontSize = 12.sp)
-                )
-            }
+            WidgetSkeletonLoader(colors = colors, alpha = alpha, style = settings.style, count = 3)
         } else {
             LazyColumn(modifier = GlanceModifier.fillMaxSize()) {
                 items(entries, itemId = { it.id }) { entry ->
@@ -265,6 +253,62 @@ private fun EntryRow(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun WidgetSkeletonLoader(
+    colors: WidgetColorsHolder,
+    alpha: Float,
+    style: String = "list",
+    count: Int = 3
+) {
+    val isCompact = style == "compact"
+
+    LazyColumn(modifier = GlanceModifier.fillMaxSize()) {
+        items(count) { _ ->
+            Box(
+                modifier = GlanceModifier
+                    .fillMaxWidth()
+                    .background(ColorProvider(colors.sunken.copy(alpha = alpha)))
+                    .cornerRadius(16.dp)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = GlanceModifier.defaultWeight()) {
+                        // Title skeleton line
+                        Box(
+                            modifier = GlanceModifier
+                                .width(if (isCompact) 150.dp else 200.dp)
+                                .height(if (isCompact) 11.dp else 14.dp)
+                                .background(ColorProvider(colors.muted.copy(alpha = 0.35f)))
+                                .cornerRadius(4.dp)
+                        ) { }
+                        if (!isCompact) {
+                            Spacer(modifier = GlanceModifier.height(2.dp))
+                            // Subtitle skeleton line
+                            Box(
+                                modifier = GlanceModifier
+                                    .width(100.dp)
+                                    .height(10.dp)
+                                    .background(ColorProvider(colors.muted.copy(alpha = 0.25f)))
+                                    .cornerRadius(4.dp)
+                            ) { }
+                        }
+                    }
+                    // Badge skeleton box
+                    Box(
+                        modifier = GlanceModifier
+                            .width(34.dp)
+                            .height(if (isCompact) 16.dp else 20.dp)
+                            .background(ColorProvider(colors.hairline.copy(alpha = 0.5f)))
+                            .cornerRadius(8.dp)
+                    ) { }
+                }
+            }
+            Spacer(modifier = GlanceModifier.height(12.dp))
         }
     }
 }
