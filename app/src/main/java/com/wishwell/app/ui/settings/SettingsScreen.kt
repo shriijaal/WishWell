@@ -606,24 +606,8 @@ fun SettingsScreen(container: AppContainer) {
                 }
                 OutlinedButton(
                     onClick = {
-                        // 1) Restore from tracked backup files (app internal storage)
-                        val tracked = state.backupFiles
-                        if (tracked.isNotEmpty()) {
-                            viewModel.restoreFromBackupFile(tracked.first().path)
-                        } else {
-                            // 2) Scan Downloads folder for a backup file
-                            val downloadDir = File("/storage/emulated/0/Download")
-                            val backupFiles = downloadDir.listFiles()
-                                ?.filter { it.name.startsWith("wishwell-backup") && it.name.endsWith(".json") }
-                                ?.sortedByDescending { it.lastModified() }
-                                .orEmpty()
-                            if (backupFiles.isNotEmpty()) {
-                                viewModel.restoreFromBackupFile(backupFiles.first().absolutePath)
-                            } else {
-                                // 3) Fall back to file picker
-                                importLauncher.launch(arrayOf("application/json", "text/*", "*/*"))
-                            }
-                        }
+                        // Open file picker so user can choose from the backup folder (e.g. Downloads)
+                        importLauncher.launch(arrayOf("application/json", "text/*", "*/*"))
                     },
                     enabled = !backupBusy,
                     shape = CircleShape,

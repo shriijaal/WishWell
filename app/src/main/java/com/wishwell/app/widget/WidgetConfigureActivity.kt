@@ -24,6 +24,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -211,7 +212,12 @@ private fun WidgetSettingsEditor(
             Slider(
                 value = settings.transparency / 100f,
                 onValueChange = { settings = settings.copy(transparency = (it * 100).roundToInt()) },
-                valueRange = 0f..1f
+                valueRange = 0f..1f,
+                colors = SliderDefaults.colors(
+                    activeTrackColor = colors.primary,
+                    inactiveTrackColor = extra.hairline,
+                    thumbColor = colors.primary
+                )
             )
         }
     }
