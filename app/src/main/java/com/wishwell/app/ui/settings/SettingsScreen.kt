@@ -59,6 +59,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.wishwell.app.data.repo.WishlistRepository
 import com.wishwell.app.di.AppContainer
 import com.wishwell.app.ui.components.ConfirmDialog
 import com.wishwell.app.ui.components.LoadingSpinner
@@ -74,6 +75,7 @@ import com.wishwell.app.util.formatRelativeDay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 @Composable
 fun SettingsScreen(container: AppContainer) {
@@ -96,6 +98,7 @@ fun SettingsScreen(container: AppContainer) {
 
     LaunchedEffect(Unit) {
         viewModel.loadStorageUsage()
+        viewModel.loadDiskVolumes()
     }
 
     val exportLauncher = rememberLauncherForActivityResult(
@@ -575,7 +578,7 @@ fun SettingsScreen(container: AppContainer) {
                     modifier = Modifier.weight(1f),
                     border = BorderStroke(1.dp, extra.hairline)
                 ) {
-                    Text(if (backupBusy) "Working…" else "Restore from backup", color = if (backupBusy) extra.muted else colors.onSurface)
+                    Text(if (backupBusy) "Working…" else "Restore now", color = if (backupBusy) extra.muted else colors.onSurface)
                 }
             }
             Spacer(Modifier.height(8.dp))
@@ -677,6 +680,8 @@ fun SettingsScreen(container: AppContainer) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(
                     "off" to "Off",
+                    "6h" to "6 hrs",
+                    "12h" to "12 hrs",
                     "daily" to "Daily",
                     "weekly" to "Weekly",
                     "monthly" to "Monthly"
@@ -700,11 +705,43 @@ fun SettingsScreen(container: AppContainer) {
         }
 
         Spacer(Modifier.height(18.dp))
+        SectionLabel("Theme")
+        Spacer(Modifier.height(10.dp))
+        SettingsCard {
+            Text(
+                text = "App theme",
+                style = MaterialTheme.typography.titleSmall,
+                color = colors.onSurface
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = "Choose how the app looks. System follows your device's light/dark setting.",
+                style = MaterialTheme.typography.bodySmall,
+                color = extra.muted
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(
+                    "system" to "System",
+                    "light" to "Light",
+                    "dark" to "Dark"
+                ).forEach { (key, label) ->
+                    WishPill(
+                        text = label,
+                        selected = state.uiTheme == key,
+                        onClick = { viewModel.setUiTheme(key) }
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(18.dp))
         SectionLabel("Storage usage")
         Spacer(Modifier.height(10.dp))
         SettingsCard {
             Column(modifier = Modifier.fillMaxWidth()) {
                 val usage by viewModel.storageUsageState.collectAsStateWithLifecycle(null)
+                val volumes by viewModel.diskVolumesState.collectAsStateWithLifecycle(emptyList())
 
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(modifier = Modifier.weight(1f)) {
@@ -751,10 +788,27 @@ fun SettingsScreen(container: AppContainer) {
                     )
                 }
 
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = "Device storage",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = colors.onSurface
+                )
+                Spacer(Modifier.height(4.dp))
+                volumes.filter { !it.isRemovable }.forEach { volume ->
+                    StorageVolumeRow(volume = volume, formatBytes = viewModel::formatBytes)
+                }
+                volumes.filter { it.isRemovable }.forEach { volume ->
+                    StorageVolumeRow(volume = volume, formatBytes = viewModel::formatBytes)
+                }
+
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
-                        onClick = { viewModel.loadStorageUsage() },
+                        onClick = {
+                            viewModel.loadStorageUsage()
+                            viewModel.loadDiskVolumes()
+                        },
                         shape = CircleShape,
                         modifier = Modifier.weight(1f),
                         border = BorderStroke(1.dp, extra.hairline)
@@ -888,4 +942,51 @@ private fun RowDivider() {
         color = LocalWishExtraColors.current.hairline.copy(alpha = 0.8f)
     )
     Spacer(Modifier.height(10.dp))
+}
+
+@Composable
+private fun StorageVolumeRow(
+    volume: WishlistRepository.DiskVolume,
+    formatBytes: (Long) -> String
+) {
+    val colors = MaterialTheme.colorScheme
+    val extra = LocalWishExtraColors.current
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = volume.label,
+                style = MaterialTheme.typography.titleSmall,
+                color = colors.onSurface
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = "${if (volume.isRemovable) "Removable" else "Internal"} · ${volume.path}",
+                style = MaterialTheme.typography.labelSmall,
+                color = extra.muted,
+                maxLines = 1
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        Column {
+            Text(
+                text = "${formatBytes(volume.usedBytes)} used · ${formatBytes(volume.freeBytes)} free",
+                style = MaterialTheme.typography.titleSmall,
+                color = colors.onSurface
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = "${volume.usedPercent.roundToInt()}% of ${formatBytes(volume.totalBytes)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = extra.muted
+            )
+        }
+    }
+    Spacer(Modifier.height(6.dp))
+    androidx.compose.material3.LinearProgressIndicator(
+        progress = volume.usedPercent.coerceIn(0f, 100f) / 100f,
+        modifier = Modifier.fillMaxWidth(),
+        color = colors.primary,
+        trackColor = extra.hairline.copy(alpha = 0.5f)
+    )
+    Spacer(Modifier.height(12.dp))
 }

@@ -1,8 +1,8 @@
 package com.wishwell.app.widget
 
 import android.content.Context
-import android.content.Intent
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
@@ -33,17 +33,28 @@ import com.wishwell.app.MainActivity
 import com.wishwell.app.notify.Notifier
 
 class WishlistedItemsWidget : GlanceAppWidget() {
-    override suspend fun provideGlance(context: Context, id: GlanceId) {
+    override suspend fun provideGlance(context: Context, glanceId: GlanceId) {
         val entries = WidgetData.load(context, dropsOnly = false, limit = 8)
+        val settings = WidgetSettingsStore.load(context, glanceId.toString())
         provideContent {
             WidgetListContent(
+                context = context,
+                widgetKey = glanceId.toString(),
                 title = "Wishlisted items",
                 subtitle = if (entries.isEmpty()) "Save items in WishWell to see them here." else "${entries.size} saved",
                 entries = entries,
                 emptyMessage = "No wishlisted items yet",
-                accent = ColorProvider(WidgetColors.forest)
+                accent = ColorProvider(widgetAccent(context, settings)),
+                settings = settings
             )
         }
+    }
+}
+
+private fun widgetAccent(context: Context, settings: WidgetSettingsStore.WidgetSettings): Color {
+    return when (settings.theme) {
+        "dark" -> Color(0xFFCFE39C)
+        else -> Color(0xFF1F3D2E)
     }
 }
 

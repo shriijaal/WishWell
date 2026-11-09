@@ -47,10 +47,15 @@ class BackupWorker(
             if (frequency == "off") return
 
             val intervalHours = when (frequency) {
+                "6h" -> 6L
+                "12h" -> 12L
                 "daily" -> 24L
                 "weekly" -> 168L
                 "monthly" -> 720L
-                else -> return
+                else -> {
+                    // Allow explicit hour values like "6h" / "12h"
+                    frequency.removeSuffix("h").toIntOrNull()?.let { it.toLong() } ?: return
+                }
             }
 
             val request = PeriodicWorkRequestBuilder<BackupWorker>(intervalHours, TimeUnit.HOURS)

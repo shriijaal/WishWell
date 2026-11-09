@@ -32,7 +32,9 @@ data class SettingsUiState(
     val backupLocation: String = "app_internal",
     val autoBackupFrequency: String = "off",
     val lastBackupAt: Long? = null,
-    val backupFileCount: Int = 0
+    val backupFileCount: Int = 0,
+    // Theme state
+    val uiTheme: String = "system"
 )
 
 private data class PrefsSnapshot(
@@ -45,7 +47,8 @@ private data class PrefsSnapshot(
     val navbarStyle: String,
     val navbarGlassGlow: Boolean,
     val backupLocation: String,
-    val autoBackupFrequency: String
+    val autoBackupFrequency: String,
+    val uiTheme: String
 )
 
 private data class StatusSnapshot(
@@ -62,6 +65,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     private val refreshing = MutableStateFlow(false)
     private val message = MutableStateFlow<String?>(null)
     private val storageUsage = MutableStateFlow<WishlistRepository.StorageUsage?>(null)
+    private val diskVolumes = MutableStateFlow<List<WishlistRepository.DiskVolume>>(emptyList())
 
     private val prefsCore1 = combine(
         prefs.refreshIntervalHours,
@@ -82,7 +86,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         prefs.autoBackupFrequency
     ) { location, frequency -> location to frequency }
 
-    private val prefsSnapshot = combine(prefsCore1, prefsCore2, navPrefs, backupPrefs) { c1, c2, nav, bk ->
+    private val prefsSnapshot = combine(prefsCore1, prefsCore2, navPrefs, backupPrefs, prefs.uiTheme) { c1, c2, nav, bk, theme ->
         PrefsSnapshot(
             refreshHours = c1.first,
             notificationsEnabled = c1.second,
@@ -93,7 +97,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             navbarStyle = nav.first,
             navbarGlassGlow = nav.second,
             backupLocation = bk.first,
-            autoBackupFrequency = bk.second
+            autoBackupFrequency = bk.second,
+            uiTheme = theme
         )
     }
 
@@ -129,7 +134,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             backupLocation = p.backupLocation,
             autoBackupFrequency = p.autoBackupFrequency,
             lastBackupAt = lastBackup,
-            backupFileCount = backupPaths.size
+            backupFileCount = backupPaths.size,
+            uiTheme = p.uiTheme
         )
     }.stateIn(
         scope = viewModelScope,
@@ -142,6 +148,13 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),
             initialValue = null
+        )
+
+    val diskVolumesState: StateFlow<List<WishlistRepository.DiskVolume>> = diskVolumes
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = emptyList()
         )
 
     // ---------------------------------------------------------------- preferences
@@ -181,6 +194,10 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { prefs.setNavbarGlassGlow(enabled) }
     }
 
+    fun setUiTheme(theme: String) {
+        viewModelScope.launch { prefs.setUiTheme(theme) }
+    }
+
     // ---------------------------------------------------------------- backup
 
     fun setBackupLocation(location: String, uri: String? = null) {
@@ -205,6 +222,15 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 repo.getStorageUsage()
             }
             storageUsage.value = usage
+        }
+    }
+
+    fun loadDiskVolumes() {
+        viewModelScope.launch {
+            val volumes = withContext(Dispatchers.IO) {
+                repo.getDiskVolumes()
+            }
+            diskVolumes.value = volumes
         }
     }
 

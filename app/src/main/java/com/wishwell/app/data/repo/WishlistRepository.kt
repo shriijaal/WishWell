@@ -1122,6 +1122,18 @@ class WishlistRepository(
         val backupCount: Int
     )
 
+    /** A single storage volume (internal, SD card, etc.) with used/free space. */
+    data class DiskVolume(
+        val label: String,
+        val path: String,
+        val totalBytes: Long,
+        val freeBytes: Long,
+        val isRemovable: Boolean
+    ) {
+        val usedBytes: Long get() = totalBytes - freeBytes
+        val usedPercent: Float get() = if (totalBytes > 0) (usedBytes.toFloat() / totalBytes * 100) else 0f
+    }
+
     suspend fun getStorageUsage(): StorageUsage = withContext(Dispatchers.IO) {
         val dbFile = File(appContext.filesDir, "wishwell.db")
         val dbBytes = if (dbFile.exists()) dbFile.length() else 0L
@@ -1131,5 +1143,39 @@ class WishlistRepository(
         val backups = listBackupFiles()
         val backupBytes = backups.sumOf { it.length() }
         StorageUsage(dbBytes, itemCount, categoryCount, pricePointCount, backupBytes, backups.size)
+    }
+
+    /**
+     * Lists all mounted storage volumes (internal storage, SD card, etc.) with total/free space.
+     * Falls back gracefully on scoped-storage devices where some roots are unreadable.
+     */
+    suspend fun getDiskVolumes(): List<DiskVolume> = withContext(Dispatchers.IO) {
+        val volumes = mutableListOf<DiskVolume>()
+        val seenPaths = mutableSetOf<String>()
+
+        File.listRoots().forEach { root ->
+            val path = root.absolutePath
+            if (path in seenPaths) return@forEach
+            seenPaths.add(path)
+
+            val total = runCatching { root.totalSpace }.getOrDefault(0L)
+            val free = runCatching { root.freeSpace }.getOrDefault(0L)
+            if (total == 0L && free == 0L) return@forEach
+
+            val label = when {
+                path.startsWith("/data") -> "Device storage"
+                path.startsWith("/storage/") && path.contains("sdcard", ignoreCase = true) -> "SD card"
+                path.startsWith("/storage/") -> "Storage"
+                else -> path.takeIf { it.isNotEmpty() } ?: "Storage"
+            }
+
+            val isRemovable = runCatching {
+                android.os.Environment.isExternalStorageRemovable(root)
+            }.getOrDefault(false)
+
+            volumes += DiskVolume(label, path, total, free, isRemovable)
+        }
+
+        volumes.sortedBy { it.isRemovable.not() && it.label == "Device storage" }
     }
 }

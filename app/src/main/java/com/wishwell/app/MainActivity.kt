@@ -9,6 +9,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,7 +36,14 @@ class MainActivity : ComponentActivity() {
             val context = LocalContext.current
             val container = (context.applicationContext as WishwellApp).container
             val accent by container.prefs.accentColor.collectAsStateWithLifecycle(initialValue = "green")
-            WishwellTheme(accentKey = accent) {
+            val uiTheme by container.prefs.uiTheme.collectAsStateWithLifecycle(initialValue = "system")
+            val isSystemDark = isSystemInDarkTheme()
+            val darkTheme = when (uiTheme) {
+                "light" -> false
+                "dark" -> true
+                else -> isSystemDark
+            }
+            WishwellTheme(accentKey = accent, darkTheme = darkTheme) {
                 val permissionLauncher = rememberNotificationPermissionLauncher()
 
                 LaunchedEffect(Unit) {

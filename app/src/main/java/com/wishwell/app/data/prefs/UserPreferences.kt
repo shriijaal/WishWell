@@ -35,6 +35,9 @@ class UserPreferences(private val context: Context) {
         val AUTO_BACKUP_FREQUENCY = stringPreferencesKey("auto_backup_frequency")
         val LAST_BACKUP_AT = longPreferencesKey("last_backup_at")
         val BACKUP_FILE_PATHS = stringSetPreferencesKey("backup_file_paths")
+
+        // UI theme: "system", "light", "dark"
+        val UI_THEME = stringPreferencesKey("ui_theme")
     }
 
     val refreshIntervalHours: Flow<Int> =
@@ -91,6 +94,10 @@ class UserPreferences(private val context: Context) {
 
     val backupFilePaths: Flow<Set<String>> =
         context.dataStore.data.map { it[Keys.BACKUP_FILE_PATHS] ?: emptySet() }
+
+    /** App theme: "system", "light", "dark". */
+    val uiTheme: Flow<String> =
+        context.dataStore.data.map { it[Keys.UI_THEME] ?: "system" }
 
     suspend fun setRefreshInterval(hours: Int) {
         context.dataStore.edit { it[Keys.REFRESH_HOURS] = hours }
@@ -170,5 +177,9 @@ class UserPreferences(private val context: Context) {
             val current = prefs[Keys.BACKUP_FILE_PATHS] ?: emptySet()
             prefs[Keys.BACKUP_FILE_PATHS] = current - path
         }
+    }
+
+    suspend fun setUiTheme(theme: String) {
+        context.dataStore.edit { it[Keys.UI_THEME] = theme }
     }
 }
