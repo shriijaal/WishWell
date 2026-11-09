@@ -1146,7 +1146,10 @@ class WishlistRepository(
     }
 
     /**
-     * Lists all mounted storage volumes (internal storage, SD card, etc.) with total/free space.
+     * Lists all mounted storage volumes (internal, SD card, etc.) with total/free space.
+     * Prioritises the user-visible emulated internal storage (/storage/emulated/0) so the
+     * settings screen shows the real device ROM (e.g. 48.44 GB total) rather than the small
+     * /data system partition.
      * Falls back gracefully on scoped-storage devices where some roots are unreadable.
      */
     suspend fun getDiskVolumes(): List<DiskVolume> = withContext(Dispatchers.IO) {
@@ -1162,10 +1165,14 @@ class WishlistRepository(
             val free = runCatching { root.freeSpace }.getOrDefault(0L)
             if (total == 0L && free == 0L) return@forEach
 
+            val isEmulated = path.startsWith("/storage/emulated/")
+            val isSdcard = path.startsWith("/storage/") && path.contains("sdcard", ignoreCase = true)
+
             val label = when {
-                path.startsWith("/data") -> "Device storage"
-                path.startsWith("/storage/") && path.contains("sdcard", ignoreCase = true) -> "SD card"
+                isEmulated -> "Device storage"
+                isSdcard -> "SD card"
                 path.startsWith("/storage/") -> "Storage"
+                path.startsWith("/data") -> "System data"
                 else -> path.takeIf { it.isNotEmpty() } ?: "Storage"
             }
 
@@ -1176,6 +1183,8 @@ class WishlistRepository(
             volumes += DiskVolume(label, path, total, free, isRemovable)
         }
 
-        volumes.sortedBy { it.isRemovable.not() && it.label == "Device storage" }
+        // Put emulated device storage first, then removable, then everything else
+        volumes.sortedWith(compareBy<DiskVolume> { !it.label.equals("Device storage", ignoreCase = true) }
+            .thenBy { it.isRemovable.not() })
     }
 }

@@ -39,7 +39,6 @@ class WishlistedItemsWidget : GlanceAppWidget() {
         provideContent {
             WidgetListContent(
                 context = context,
-                widgetKey = glanceId.toString(),
                 title = "Wishlisted items",
                 subtitle = if (entries.isEmpty()) "Save items in WishWell to see them here." else "${entries.size} saved",
                 entries = entries,

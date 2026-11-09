@@ -17,7 +17,6 @@ class PriceDropsWidget : GlanceAppWidget() {
         provideContent {
             WidgetListContent(
                 context = context,
-                widgetKey = glanceId.toString(),
                 title = "Price drops",
                 subtitle = if (entries.isEmpty()) "No items on sale or at a low right now." else "${entries.size} deal${if (entries.size == 1) "" else "s"}",
                 entries = entries,

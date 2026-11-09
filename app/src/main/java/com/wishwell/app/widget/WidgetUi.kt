@@ -104,6 +104,12 @@ private fun appIntent(contextId: Long? = null): Intent =
         if (contextId != null && contextId > 0) putExtra(Notifier.EXTRA_ITEM_ID, contextId)
     }
 
+private fun syncWidgetIntent(): Intent =
+    Intent("com.wishwell.app.action.SYNC_WIDGET").apply {
+        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        setPackage("com.wishwell.app")
+    }
+
 private fun editWidgetIntent(widgetKey: String): Intent =
     Intent(Intent.ACTION_VIEW).setClassName("com.wishwell.app", "com.wishwell.app.widget.WidgetEditActivity").apply {
         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -113,7 +119,6 @@ private fun editWidgetIntent(widgetKey: String): Intent =
 @Composable
 internal fun WidgetListContent(
     context: Context,
-    widgetKey: String,
     title: String,
     subtitle: String,
     entries: List<WidgetEntry>,
@@ -146,33 +151,21 @@ internal fun WidgetListContent(
                     .background(ColorProvider(colors.sunken.copy(alpha = alpha)))
                     .cornerRadius(10.dp)
                     .padding(horizontal = 8.dp, vertical = 3.dp)
+                    .clickable(actionStartActivity(syncWidgetIntent()))
             ) {
                 Text(
-                    text = "Open",
-                    style = TextStyle(color = accent, fontSize = 11.sp, fontWeight = FontWeight.Medium)
-                )
-            }
-            // Edit button - opens WidgetEditActivity
-            Box(
-                modifier = GlanceModifier
-                    .background(ColorProvider(colors.sunken.copy(alpha = alpha)))
-                    .cornerRadius(10.dp)
-                    .padding(horizontal = 8.dp, vertical = 3.dp)
-                    .clickable(actionStartActivity(editWidgetIntent(widgetKey)))
-            ) {
-                Text(
-                    text = "Edit",
+                    text = "Sync",
                     style = TextStyle(color = accent, fontSize = 11.sp, fontWeight = FontWeight.Medium)
                 )
             }
         }
-        Spacer(modifier = GlanceModifier.height(2.dp))
+        Spacer(modifier = GlanceModifier.height(4.dp))
         Text(
             text = subtitle,
             style = TextStyle(color = ColorProvider(colors.muted), fontSize = 11.sp),
             maxLines = 1
         )
-        Spacer(modifier = GlanceModifier.height(8.dp))
+        Spacer(modifier = GlanceModifier.height(12.dp))
         if (entries.isEmpty()) {
             Box(
                 modifier = GlanceModifier
@@ -190,8 +183,8 @@ internal fun WidgetListContent(
         } else {
             LazyColumn(modifier = GlanceModifier.fillMaxSize()) {
                 items(entries, itemId = { it.id }) { entry ->
-                    EntryRow(entry = entry, accent = accent, colors = colors, alpha = alpha)
-                    Spacer(modifier = GlanceModifier.height(6.dp))
+                    EntryRow(entry = entry, colors = colors, alpha = alpha)
+                    Spacer(modifier = GlanceModifier.height(10.dp))
                 }
             }
         }
@@ -201,7 +194,6 @@ internal fun WidgetListContent(
 @Composable
 private fun EntryRow(
     entry: WidgetEntry,
-    accent: ColorProvider,
     colors: WidgetColorsHolder,
     alpha: Float
 ) {
