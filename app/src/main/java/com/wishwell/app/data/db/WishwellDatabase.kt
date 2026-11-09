@@ -87,7 +87,6 @@ abstract class WishwellDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE items ADD COLUMN isPurchased INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE items ADD COLUMN purchasedAt INTEGER")
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_items_isPurchased` ON `items` (`isPurchased`)")
             }
         }
 
