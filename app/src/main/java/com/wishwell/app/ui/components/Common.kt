@@ -556,13 +556,24 @@ fun WishCard(
                 }
                 if (isPurchased) {
                     Box(modifier = Modifier.padding(top = 4.dp, end = 4.dp)) {
-                        Icon(
-                            Icons.Rounded.Done,
-                            contentDescription = "Bought",
-                            tint = colors.primary,
-                            modifier = Modifier.size(20.dp)
-                                .background(colors.surface, CircleShape)
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                Icons.Rounded.Done,
+                                contentDescription = "Bought",
+                                tint = colors.primary,
+                                modifier = Modifier.size(16.dp)
+                                    .background(colors.surface, CircleShape)
+                            )
+                            Text(
+                                text = "Bought",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                                color = colors.primary,
+                                maxLines = 1
+                            )
+                        }
                     }
                 }
                 Spacer(Modifier.width(12.dp))
