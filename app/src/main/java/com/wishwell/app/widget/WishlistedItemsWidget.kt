@@ -40,12 +40,11 @@ import kotlinx.coroutines.launch
 
 class WishlistedItemsWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, glanceId: GlanceId) {
-        val settings = WidgetSettingsStore.load(context, "default")
         val entries = WidgetData.load(
             context = context,
-            dropsOnly = settings.dropsOnly,
-            sortOrder = settings.sortOrder,
-            limit = settings.limit
+            dropsOnly = false,
+            sortOrder = "recent",
+            limit = 8
         )
         provideContent {
             WidgetListContent(
@@ -53,8 +52,7 @@ class WishlistedItemsWidget : GlanceAppWidget() {
                 title = "Wishlisted items",
                 subtitle = if (entries.isEmpty()) "Save items in WishWell to see them here." else "${entries.size} saved",
                 entries = entries,
-                emptyMessage = "No wishlisted items yet",
-                settings = settings
+                emptyMessage = "No wishlisted items yet"
             )
         }
     }

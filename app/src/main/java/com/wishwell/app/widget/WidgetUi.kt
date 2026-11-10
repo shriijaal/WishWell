@@ -58,14 +58,9 @@ private fun isDarkTheme(context: Context): Boolean {
     return false
 }
 
-private fun resolveColors(context: Context, theme: String): WidgetColorsHolder {
+private fun resolveColors(context: Context): WidgetColorsHolder {
     val systemDark = isDarkTheme(context)
-    val dark = when (theme) {
-        "dark" -> true
-        "light" -> false
-        else -> systemDark
-    }
-    return if (dark) {
+    return if (systemDark) {
         WidgetColorsHolder(
             paper = WidgetColors.darkBackground,
             ink = WidgetColors.darkInk,
@@ -110,40 +105,24 @@ private fun syncWidgetIntent(): Intent =
         setPackage("com.wishwell.app")
     }
 
-private fun editWidgetIntent(widgetKey: String): Intent =
-    Intent(Intent.ACTION_VIEW).setClassName("com.wishwell.app", "com.wishwell.app.widget.WidgetEditActivity").apply {
-        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        putExtra("widget_id", widgetKey)
-    }
-
 @Composable
 internal fun WidgetListContent(
     context: Context,
     title: String,
     subtitle: String,
     entries: List<WidgetEntry>,
-    emptyMessage: String,
-    settings: WidgetSettingsStore.WidgetSettings
+    emptyMessage: String
 ) {
-    val colors = resolveColors(context, settings.theme)
-    val alpha = settings.transparency.coerceIn(0, 100) / 100f
-    val accent = WidgetSettingsStore.parseAccentColor(settings.accentColor) ?: colors.forest
+    val colors = resolveColors(context)
+    val accent = colors.forest
 
     Column(
         modifier = GlanceModifier
             .fillMaxSize()
-            .background(ColorProvider(colors.paper.copy(alpha = alpha)))
+            .background(ColorProvider(colors.paper))
             .padding(16.dp)
             .clickable(actionStartActivity(appIntent()))
     ) {
-        // ── Blur overlay (visual indicator when blur is enabled) ──
-        if (settings.blur) {
-            Box(
-                modifier = GlanceModifier
-                    .fillMaxSize()
-                    .background(ColorProvider(accent.copy(alpha = 0.05f)))
-            ) { }
-        }
         // ── Header ──
         Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = GlanceModifier.defaultWeight()) {
@@ -151,7 +130,7 @@ internal fun WidgetListContent(
                     text = title,
                     style = TextStyle(
                         color = ColorProvider(colors.ink),
-                        fontSize = (16.sp * settings.fontSize.coerceIn(0.75f, 1.5f)),
+                        fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
                     ),
                     maxLines = 1
@@ -192,24 +171,17 @@ internal fun WidgetListContent(
         Spacer(modifier = GlanceModifier.height(16.dp))
 
         if (entries.isEmpty()) {
-            WidgetSkeletonLoader(colors = colors, alpha = alpha, style = settings.style, count = 3)
+            WidgetSkeletonLoader(colors = colors, count = 3)
         } else {
-            val maxEntries = when (settings.widgetSize) {
-                "small" -> 3
-                "large" -> 12
-                else -> 8
-            }
             LazyColumn(modifier = GlanceModifier.fillMaxSize()) {
-                items(items = entries.take(maxEntries)) { entry ->
+                items(items = entries.take(8)) { entry ->
                     EntryRow(
                         entry = entry,
                         colors = colors,
-                        alpha = alpha,
-                        style = settings.style,
                         accent = accent,
-                        showPrice = settings.showPrice,
-                        showStore = settings.showStore,
-                        fontSize = settings.fontSize
+                        showPrice = true,
+                        showStore = true,
+                        fontSize = 1.0f
                     )
                 }
             }
@@ -221,25 +193,19 @@ internal fun WidgetListContent(
 private fun EntryRow(
     entry: WidgetEntry,
     colors: WidgetColorsHolder,
-    alpha: Float,
-    style: String = "list",
     accent: Color = Color(0xFF1F3D2E),
     showPrice: Boolean = true,
     showStore: Boolean = true,
     fontSize: Float = 1.0f
 ) {
-    val isCompact = style == "compact"
-    val isCard = style == "card"
-    val baseSize = if (isCompact) 11f else 14f
+    val baseSize = 14f
     val titleSize = baseSize * fontSize.coerceIn(0.75f, 1.5f)
     val subtitleSize = 10f * fontSize.coerceIn(0.75f, 1.5f)
 
     Box(
         modifier = GlanceModifier
             .fillMaxWidth()
-            .background(
-                if (isCard) ColorProvider(accent.copy(alpha = 0.10f)) else ColorProvider(colors.sunken.copy(alpha = alpha))
-            )
+            .background(ColorProvider(colors.sunken))
             .cornerRadius(16.dp)
             .padding(horizontal = 16.dp, vertical = 12.dp)
             .clickable(actionStartActivity(appIntent(entry.id))),
@@ -254,29 +220,27 @@ private fun EntryRow(
                         fontSize = titleSize.sp,
                         fontWeight = FontWeight.Medium
                     ),
-                    maxLines = if (isCompact) 1 else 2
+                    maxLines = 2
                 )
-                if (!isCompact) {
-                    Spacer(modifier = GlanceModifier.height(2.dp))
-                    Row(
-                        modifier = GlanceModifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        if (showStore) {
-                            Text(
-                                text = entry.storeName,
-                                style = TextStyle(color = ColorProvider(colors.muted), fontSize = subtitleSize.sp),
-                                maxLines = 1
-                            )
-                            Spacer(modifier = GlanceModifier.width(8.dp))
-                        }
-                        if (showPrice) {
-                            Text(
-                                text = entry.priceText,
-                                style = TextStyle(color = ColorProvider(colors.muted), fontSize = subtitleSize.sp),
-                                maxLines = 1
-                            )
-                        }
+                Spacer(modifier = GlanceModifier.height(2.dp))
+                Row(
+                    modifier = GlanceModifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (showStore) {
+                        Text(
+                            text = entry.storeName,
+                            style = TextStyle(color = ColorProvider(colors.muted), fontSize = subtitleSize.sp),
+                            maxLines = 1
+                        )
+                        Spacer(modifier = GlanceModifier.width(8.dp))
+                    }
+                    if (showPrice) {
+                        Text(
+                            text = entry.priceText,
+                            style = TextStyle(color = ColorProvider(colors.muted), fontSize = subtitleSize.sp),
+                            maxLines = 1
+                        )
                     }
                 }
             }
@@ -294,7 +258,7 @@ private fun EntryRow(
                             color = ColorProvider(
                                 if (entry.isDrop) Color(0xFF1F3D2E) else Color.White
                             ),
-                            fontSize = if (isCompact) 8.sp else 10.sp,
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.Bold
                         )
                     )
@@ -307,18 +271,14 @@ private fun EntryRow(
 @Composable
 private fun WidgetSkeletonLoader(
     colors: WidgetColorsHolder,
-    alpha: Float,
-    style: String = "list",
     count: Int = 3
 ) {
-    val isCompact = style == "compact"
-
     LazyColumn(modifier = GlanceModifier.fillMaxSize()) {
         items(count) { _ ->
             Box(
                 modifier = GlanceModifier
                     .fillMaxWidth()
-                    .background(ColorProvider(colors.sunken.copy(alpha = alpha)))
+                    .background(ColorProvider(colors.sunken))
                     .cornerRadius(16.dp)
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 contentAlignment = Alignment.Center
@@ -328,28 +288,26 @@ private fun WidgetSkeletonLoader(
                         // Title skeleton line
                         Box(
                             modifier = GlanceModifier
-                                .width(if (isCompact) 150.dp else 200.dp)
-                                .height(if (isCompact) 11.dp else 14.dp)
+                                .width(200.dp)
+                                .height(14.dp)
                                 .background(ColorProvider(colors.muted.copy(alpha = 0.35f)))
                                 .cornerRadius(4.dp)
                         ) { }
-                        if (!isCompact) {
-                            Spacer(modifier = GlanceModifier.height(2.dp))
-                            // Subtitle skeleton line
-                            Box(
-                                modifier = GlanceModifier
-                                    .width(100.dp)
-                                    .height(10.dp)
-                                    .background(ColorProvider(colors.muted.copy(alpha = 0.25f)))
-                                    .cornerRadius(4.dp)
-                            ) { }
-                        }
+                        Spacer(modifier = GlanceModifier.height(2.dp))
+                        // Subtitle skeleton line
+                        Box(
+                            modifier = GlanceModifier
+                                .width(100.dp)
+                                .height(10.dp)
+                                .background(ColorProvider(colors.muted.copy(alpha = 0.25f)))
+                                .cornerRadius(4.dp)
+                        ) { }
                     }
                     // Badge skeleton box
                     Box(
                         modifier = GlanceModifier
                             .width(34.dp)
-                            .height(if (isCompact) 16.dp else 20.dp)
+                            .height(20.dp)
                             .background(ColorProvider(colors.hairline.copy(alpha = 0.5f)))
                             .cornerRadius(8.dp)
                     ) { }

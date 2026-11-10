@@ -33,16 +33,6 @@
             </intent-filter>
         </activity>
 
-        <activity
-            android:name=".widget.WidgetEditActivity"
-            android:exported="false"
-            android:theme="@style/Theme.Wishwell" />
-
-        <activity
-            android:name=".widget.WidgetConfigureActivity"
-            android:exported="false"
-            android:theme="@style/Theme.Wishwell" />
-
         <receiver
             android:name=".widget.WishlistedItemsWidgetReceiver"
             android:exported="true"
