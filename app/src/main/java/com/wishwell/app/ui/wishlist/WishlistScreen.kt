@@ -1779,30 +1779,6 @@ private fun WishlistGridCard(
                     item.item.lastCheckFailed -> "!" to com.wishwell.app.ui.components.BadgeTone.HIGH
                     else -> null
                 }
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(6.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (isPurchased) Icons.Rounded.Done else Icons.Rounded.ShoppingBag,
-                            contentDescription = if (isPurchased) "Owned" else "Planned to buy",
-                            tint = if (isPurchased) colors.primary else extra.muted,
-                            modifier = Modifier.size(16.dp)
-                                .background(colors.surface, CircleShape)
-                        )
-                        Text(
-                            text = if (isPurchased) "Owned" else "Planned to buy",
-                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
-                            color = if (isPurchased) colors.primary else extra.muted,
-                            maxLines = 1
-                        )
-                    }
-                }
                 if (!isPurchased && badge != null) {
                     Box(modifier = Modifier.align(Alignment.TopEnd).padding(6.dp)) {
                         com.wishwell.app.ui.components.DealBadge(badge.first, badge.second)
