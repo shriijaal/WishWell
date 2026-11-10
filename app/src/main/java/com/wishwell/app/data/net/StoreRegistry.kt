@@ -137,6 +137,15 @@ class StoreRegistry {
 
         if (originalStore != null) {
             links += StoreSearchLink(originalStore.displayName, originalStore.searchTemplate.format(encoded))
+        } else if (originalHost != null) {
+            // Auto-include unlisted stores via Google Shopping site: search.
+            // Lets users compare the same product at any store they've saved,
+            // even if it's not in the hardcoded registry.
+            val storeName = displayNameForHost(originalHost)
+            links += StoreSearchLink(
+                storeName,
+                "https://www.google.com/search?tbm=shop&q=site:${originalHost}+${encoded}"
+            )
         }
         defaults.forEach { regional ->
             links += StoreSearchLink(regional.storeName, regional.template.format(encoded))
