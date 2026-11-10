@@ -96,6 +96,19 @@ class WidgetConfigureActivity : ComponentActivity() {
     }
 }
 
+/**
+ * Consistent section header: uppercase, muted color, small label weight.
+ */
+@Composable
+private fun WidgetSection(
+    title: String,
+    modifier: Modifier = Modifier,
+    trailing: (@Composable () -> Unit)? = null
+) {
+    SectionLabel(text = title, modifier = modifier, trailing = trailing)
+    Spacer(modifier = Modifier.height(WidgetSettingsDesign.SectionTitleSpacing))
+}
+
 @Composable
 private fun WidgetConfigureScreen(
     appWidgetId: Int,
@@ -114,10 +127,11 @@ private fun WidgetConfigureScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(accent.copy(alpha = 0.12f))
+            .background(accent.copy(alpha = 0.08f))
             .padding(16.dp)
             .verticalScroll(rememberScrollState())
     ) {
+        // ── Screen header ──
         Text(
             text = "Configure Widget",
             style = MaterialTheme.typography.headlineSmall,
@@ -127,9 +141,9 @@ private fun WidgetConfigureScreen(
         Text(
             text = "Customise the appearance of this widget. Changes apply instantly.",
             style = MaterialTheme.typography.bodyMedium,
-            color = extra.muted
+            color = colors.onSurfaceVariant
         )
-        Spacer(modifier = Modifier.height(18.dp))
+        Spacer(modifier = Modifier.height(WidgetSettingsDesign.SectionSpacing))
 
         WidgetSettingsEditor(
             widgetKey = "default",
@@ -163,11 +177,10 @@ private fun WidgetConfigureScreen(
             }
         )
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(WidgetSettingsDesign.SectionSpacing))
 
         // ── Import / Export ──
-        SectionLabel("Import / Export")
-        Spacer(modifier = Modifier.height(10.dp))
+        WidgetSection("Import / Export") { Spacer(modifier = Modifier.width(8.dp)) }
         SettingsCard(accentColor = accent) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -192,15 +205,14 @@ private fun WidgetConfigureScreen(
             Text(
                 text = "Export saves your widget settings as JSON you can paste into another widget.",
                 style = MaterialTheme.typography.bodySmall,
-                color = extra.muted
+                color = colors.onSurfaceVariant
             )
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(WidgetSettingsDesign.SectionSpacing))
 
         // ── Reset ──
-        SectionLabel("Reset")
-        Spacer(modifier = Modifier.height(10.dp))
+        WidgetSection("Reset")
         SettingsCard(accentColor = accent) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -224,15 +236,14 @@ private fun WidgetConfigureScreen(
             Text(
                 text = "Restores all settings to their factory values.",
                 style = MaterialTheme.typography.bodySmall,
-                color = extra.muted
+                color = colors.onSurfaceVariant
             )
         }
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(WidgetSettingsDesign.SectionSpacing))
 
         // ── Live preview ──
-        SectionLabel("Live preview")
-        Spacer(modifier = Modifier.height(10.dp))
+        WidgetSection("Live preview")
         WidgetPreview(
             context = context,
             settings = settings,
@@ -289,15 +300,14 @@ private fun WidgetSettingsEditor(
     val context = LocalContext.current
 
     // ── Theme ──
-    SectionLabel("Theme")
-    Spacer(modifier = Modifier.height(10.dp))
+    WidgetSection("Theme")
     SettingsCard(accentColor = accent) {
         Text(
             text = "Choose how the widget looks. System follows your device's light/dark setting.",
             style = MaterialTheme.typography.bodySmall,
-            color = extra.muted
+            color = colors.onSurfaceVariant
         )
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(
                 "system" to "System",
@@ -314,18 +324,17 @@ private fun WidgetSettingsEditor(
         }
     }
 
-    Spacer(modifier = Modifier.height(18.dp))
+    Spacer(modifier = Modifier.height(WidgetSettingsDesign.SectionSpacing))
 
     // ── Style ──
-    SectionLabel("Style")
-    Spacer(modifier = Modifier.height(10.dp))
+    WidgetSection("Style")
     SettingsCard(accentColor = accent) {
         Text(
             text = "Choose how items are laid out in the widget.",
             style = MaterialTheme.typography.bodySmall,
-            color = extra.muted
+            color = colors.onSurfaceVariant
         )
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(
                 "list" to "List",
@@ -342,18 +351,17 @@ private fun WidgetSettingsEditor(
         }
     }
 
-    Spacer(modifier = Modifier.height(18.dp))
+    Spacer(modifier = Modifier.height(WidgetSettingsDesign.SectionSpacing))
 
     // ── Widget size ──
-    SectionLabel("Widget size")
-    Spacer(modifier = Modifier.height(10.dp))
+    WidgetSection("Widget size")
     SettingsCard(accentColor = accent) {
         Text(
             text = "Pick the widget size. Larger widgets show more entries.",
             style = MaterialTheme.typography.bodySmall,
-            color = extra.muted
+            color = colors.onSurfaceVariant
         )
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(
                 "small" to "Small",
@@ -375,11 +383,10 @@ private fun WidgetSettingsEditor(
         }
     }
 
-    Spacer(modifier = Modifier.height(18.dp))
+    Spacer(modifier = Modifier.height(WidgetSettingsDesign.SectionSpacing))
 
     // ── Content ──
-    SectionLabel("Content")
-    Spacer(modifier = Modifier.height(10.dp))
+    WidgetSection("Content")
     SettingsCard(accentColor = accent) {
         Column(modifier = Modifier.fillMaxWidth()) {
             // Item count limit
@@ -407,7 +414,7 @@ private fun WidgetSettingsEditor(
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(WidgetSettingsDesign.SubItemSpacing))
 
             // Sort order
             Text(
@@ -430,7 +437,7 @@ private fun WidgetSettingsEditor(
                     )
                 }
             }
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(WidgetSettingsDesign.SubItemSpacing))
 
             // Toggles row
             Row(
@@ -466,11 +473,10 @@ private fun WidgetSettingsEditor(
         }
     }
 
-    Spacer(modifier = Modifier.height(18.dp))
+    Spacer(modifier = Modifier.height(WidgetSettingsDesign.SectionSpacing))
 
     // ── Appearance ──
-    SectionLabel("Appearance")
-    Spacer(modifier = Modifier.height(10.dp))
+    WidgetSection("Appearance")
     SettingsCard {
         Column(modifier = Modifier.fillMaxWidth()) {
             // Accent color picker
@@ -509,7 +515,7 @@ private fun WidgetSettingsEditor(
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(WidgetSettingsDesign.SubItemSpacing))
 
             // Font size
             Text(
@@ -525,7 +531,7 @@ private fun WidgetSettingsEditor(
                 Text(
                     text = "${(settings.fontSize * 100).toInt()}%",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = extra.muted,
+                    color = colors.onSurfaceVariant,
                     modifier = Modifier.width(40.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
@@ -535,7 +541,7 @@ private fun WidgetSettingsEditor(
                     valueRange = 0.75f..1.5f,
                     colors = SliderDefaults.colors(
                         activeTrackColor = accent,
-                        inactiveTrackColor = extra.hairline,
+                        inactiveTrackColor = colors.outlineVariant,
                         thumbColor = accent
                     )
                 )
@@ -543,18 +549,17 @@ private fun WidgetSettingsEditor(
         }
     }
 
-    Spacer(modifier = Modifier.height(18.dp))
+    Spacer(modifier = Modifier.height(WidgetSettingsDesign.SectionSpacing))
 
     // ── Transparency ──
-    SectionLabel("Transparency")
-    Spacer(modifier = Modifier.height(10.dp))
+    WidgetSection("Transparency")
     SettingsCard(accentColor = accent) {
         Text(
             text = "Lower = more transparent (background shows through).",
             style = MaterialTheme.typography.bodySmall,
-            color = extra.muted
+            color = colors.onSurfaceVariant
         )
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(12.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -562,7 +567,7 @@ private fun WidgetSettingsEditor(
             Text(
                 text = "${settings.transparency}%",
                 style = MaterialTheme.typography.bodyMedium,
-                color = extra.muted,
+                color = colors.onSurfaceVariant,
                 modifier = Modifier.width(40.dp)
             )
             Spacer(modifier = Modifier.width(8.dp))
@@ -572,18 +577,17 @@ private fun WidgetSettingsEditor(
                 valueRange = 0f..1f,
                 colors = SliderDefaults.colors(
                     activeTrackColor = accent,
-                    inactiveTrackColor = extra.hairline,
+                    inactiveTrackColor = colors.outlineVariant,
                     thumbColor = accent
                 )
             )
         }
     }
 
-    Spacer(modifier = Modifier.height(18.dp))
+    Spacer(modifier = Modifier.height(WidgetSettingsDesign.SectionSpacing))
 
     // ── Blur ──
-    SectionLabel("Blur background")
-    Spacer(modifier = Modifier.height(10.dp))
+    WidgetSection("Blur background")
     SettingsCard(accentColor = accent) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -595,8 +599,8 @@ private fun WidgetSettingsEditor(
                 colors = SwitchDefaults.colors(
                     checkedThumbColor = colors.onPrimary,
                     checkedTrackColor = accent,
-                    uncheckedThumbColor = extra.muted,
-                    uncheckedTrackColor = extra.hairline
+                    uncheckedThumbColor = colors.onSurfaceVariant,
+                    uncheckedTrackColor = colors.outlineVariant
                 )
             )
             Spacer(modifier = Modifier.width(12.dp))
@@ -609,7 +613,7 @@ private fun WidgetSettingsEditor(
                 Text(
                     text = "Applies a blur effect behind the widget content",
                     style = MaterialTheme.typography.labelSmall,
-                    color = extra.muted
+                    color = colors.onSurfaceVariant
                 )
             }
         }
@@ -659,7 +663,7 @@ private fun ToggleOption(
         Surface(
             shape = CircleShape,
             color = if (checked) accentColor else Color.Transparent,
-            border = BorderStroke(1.dp, if (checked) accentColor else extra.hairline),
+            border = BorderStroke(1.dp, if (checked) accentColor else colors.outlineVariant),
             modifier = Modifier.size(20.dp)
         ) {
             Box(
@@ -704,6 +708,7 @@ private fun WidgetPreview(
             Surface(
                 shape = RoundedCornerShape(12.dp),
                 color = if (settings.blur) Color.LightGray else Color.White,
+                border = BorderStroke(WidgetSettingsDesign.CardBorder, colors.outlineVariant),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(200.dp)
@@ -722,7 +727,7 @@ private fun WidgetPreview(
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = "${previewEntries.size} saved",
-                        style = MaterialTheme.typography.bodySmall.copy(color = extra.muted),
+                        style = MaterialTheme.typography.bodySmall.copy(color = colors.onSurfaceVariant),
                         maxLines = 1
                     )
                     Spacer(modifier = Modifier.height(12.dp))
@@ -752,7 +757,7 @@ private fun WidgetPreview(
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
                                         text = entry.storeName,
-                                        style = MaterialTheme.typography.bodySmall.copy(color = extra.muted),
+                                        style = MaterialTheme.typography.bodySmall.copy(color = colors.onSurfaceVariant),
                                         maxLines = 1
                                     )
                                 }
@@ -760,7 +765,7 @@ private fun WidgetPreview(
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
                                         text = entry.priceText,
-                                        style = MaterialTheme.typography.bodySmall.copy(color = extra.muted),
+                                        style = MaterialTheme.typography.bodySmall.copy(color = colors.onSurfaceVariant),
                                         maxLines = 1
                                     )
                                 }
@@ -791,7 +796,7 @@ private fun WidgetPreview(
             Text(
                 text = "Preview shows how your widget will look on the home screen.",
                 style = MaterialTheme.typography.bodySmall,
-                color = extra.muted
+                color = colors.onSurfaceVariant
             )
         }
     }
@@ -845,13 +850,13 @@ private fun ExportImportDialog(
                     Text(
                         text = "Copy this JSON and paste it into another widget's import:",
                         style = MaterialTheme.typography.bodySmall,
-                        color = extra.muted
+                        color = colors.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(Color(0xFFF5F5F5))
+                            .background(colors.surfaceVariant)
                             .padding(12.dp)
                     ) {
                         Text(
@@ -873,14 +878,14 @@ private fun ExportImportDialog(
                     Text(
                         text = "Paste widget settings JSON here:",
                         style = MaterialTheme.typography.bodySmall,
-                        color = extra.muted
+                        color = colors.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(100.dp)
-                            .background(Color(0xFFF5F5F5))
+                            .background(colors.surfaceVariant)
                             .padding(12.dp)
                     ) {
                         Text(
@@ -903,7 +908,7 @@ private fun ExportImportDialog(
                         horizontalArrangement = Arrangement.End
                     ) {
                         TextButton(onClick = onDismiss) {
-                            Text(text = "Cancel", style = MaterialTheme.typography.labelLarge, color = extra.muted)
+                            Text(text = "Cancel", style = MaterialTheme.typography.labelLarge, color = colors.onSurfaceVariant)
                         }
                         Spacer(modifier = Modifier.width(8.dp))
                         TextButton(onClick = { onApply(editText) }) {
