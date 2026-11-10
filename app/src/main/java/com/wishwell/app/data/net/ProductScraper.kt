@@ -39,16 +39,7 @@ class ProductScraper(
             // OkHttp cannot follow those, so resolve the embedded target and fetch it ourselves.
             while (attempts < 3 && body == null) {
                 attempts++
-                val request = Request.Builder()
-                    .url(url)
-                    .header("User-Agent", USER_AGENT)
-                    .header(
-                        "Accept",
-                        "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
-                    )
-                    .header("Accept-Language", "en-US,en;q=0.9")
-                    .header("Cache-Control", "no-cache")
-                    .build()
+                val request = browserRequest(url).build()
 
                 client.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {
@@ -79,10 +70,13 @@ class ProductScraper(
             val metadata = extract(document, finalUrl, host, rawUrl)
             // Hukut renders its prices client-side, so the HTML only carries the current price
             // (JSON-LD). Its product API exposes the struck-through original price too.
-            val enriched = if (host.endsWith("hukut.com", ignoreCase = true)) {
-                enrichHukut(metadata, finalUrl)
-            } else {
-                metadata
+            // Daraz has the same problem: its PDP price block is hydrated by JS, so the catalog
+            // AJAX endpoint is used to recover both the selling and original price.
+            val enriched = when {
+                host.endsWith("hukut.com", ignoreCase = true) -> enrichHukut(metadata, finalUrl)
+                host.contains("daraz.", ignoreCase = true) ||
+                    host.contains("lazada.", ignoreCase = true) -> enrichDaraz(metadata, finalUrl)
+                else -> metadata
             }
             if (enriched.title == null && enriched.price == null) {
                 ScrapeResult.Failure("We couldn't read this page. Add the details by hand and we'll still track the price.")
@@ -220,11 +214,69 @@ class ProductScraper(
         )
     }
 
+    /**
+     * Daraz/Lazada product pages render the price block client-side, so the server HTML often
+     * carries only the original price (in `pdpTrackingData`) or an empty price div. The catalog
+     * AJAX endpoint returns the current selling price, original price and discount for an item,
+     * which is the reliable source for both the current price and the struck-through list price.
+     */
+    private fun enrichDaraz(base: ProductMetadata, pageUrl: String): ProductMetadata {
+        val itemId = Regex("""-i(\d+)""", RegexOption.IGNORE_CASE)
+            .find(pageUrl)?.groupValues?.getOrNull(1)
+            ?: Regex("""[?&]itemId=(\d+)""", RegexOption.IGNORE_CASE)
+                .find(pageUrl)?.groupValues?.getOrNull(1)
+            ?: return base
+
+        val host = runCatching { java.net.URI(pageUrl).host }.getOrNull()
+            ?.takeIf { it.isNotBlank() } ?: return base
+        val catalogUrl =
+            "https://$host/catalog/?q=${java.net.URLEncoder.encode(itemId, "UTF-8")}&ajax=true"
+        val root = fetchJsonObject(catalogUrl, desktop = true) ?: return base
+        val items = root.optJSONObject("mods")?.optJSONArray("listItems") ?: return base
+
+        val item = (0 until items.length())
+            .mapNotNull { items.optJSONObject(it) }
+            .firstOrNull {
+                it.optString("itemId") == itemId || it.optString("nid") == itemId
+            } ?: return base
+
+        fun money(vararg keys: String): Double? {
+            for (key in keys) {
+                if (!item.has(key) || item.isNull(key)) continue
+                MoneyParser.parse(item.optString(key))?.let { return it }
+                val value = item.optDouble(key, Double.NaN)
+                if (!value.isNaN() && value > 0.0) return value
+            }
+            return null
+        }
+
+        val price = money("priceShow", "price", "salePrice", "sellingPrice") ?: return base
+        val original = money(
+            "originalPrice", "original_price", "mrp", "wasPrice", "was_price",
+            "compareAtPrice", "compare_at_price", "listPrice"
+        ) ?: listPriceFromDiscount(
+            price,
+            item.optString("discount").ifBlank { item.optString("discountText") }
+        )
+
+        val listPrice = original?.takeIf { it > price + 0.01 }
+        val image = item.optString("image").takeIf { it.isNotBlank() }
+        val title = item.optString("name").takeIf { it.isNotBlank() }
+        return base.copy(
+            title = title?.let { cleanTitle(it, base.storeName ?: "Daraz") } ?: base.title,
+            imageUrl = image ?: base.imageUrl,
+            imageUrls = if (image != null && base.imageUrls.isEmpty()) listOf(image) else base.imageUrls,
+            price = price,
+            listPrice = listPrice,
+            currencyCode = base.currencyCode ?: "NPR"
+        )
+    }
+
     /** Fetches a small JSON document, returning null on any network/parse failure. */
-    private fun fetchJsonObject(url: String): JSONObject? = try {
+    private fun fetchJsonObject(url: String, desktop: Boolean = false): JSONObject? = try {
         val request = Request.Builder()
             .url(url)
-            .header("User-Agent", USER_AGENT)
+            .header("User-Agent", if (desktop) DESKTOP_USER_AGENT else USER_AGENT)
             .header("Accept", "application/json")
             .build()
         client.newCall(request).execute().use { response ->
@@ -315,6 +367,10 @@ class ProductScraper(
 
         val urlHints = extractPriceHintsFromUrl(finalUrl)
         val (domCurrent, domOriginal) = extractDomProductPrices(document)
+        // Store-specific visible price blocks (Amazon / Daraz) reliably distinguish the current
+        // selling price from the struck-through original price, which the generic DOM parser
+        // does not recognise on those storefronts.
+        val (storeCurrent, storeOriginal) = extractStoreSpecificPrices(document, host)
         val currencyResolved = currency ?: scriptData?.currencyCode ?: stores.defaultCurrencyFor(host)
 
         var price = offerPrice
@@ -378,6 +434,30 @@ class ProductScraper(
                 if (lp == null || lp <= p + 0.01 || lp > orig * 5.0 || kotlin.math.abs(lp - orig) / kotlin.math.max(orig, 0.01) > 1.5) {
                     listPrice = orig
                 } else if (lp < orig - 0.01) {
+                    listPrice = orig
+                }
+            }
+        }
+
+        // Store-specific price pair is authoritative for the visible selling/struck price.
+        if (storeCurrent != null) {
+            val cur = storeCurrent
+            val orig = storeOriginal?.takeIf { it > cur + 0.01 }
+            val existing = price
+            when {
+                existing == null -> price = cur
+                // We picked up the struck-through original as the current price — correct it.
+                orig != null && existing >= orig - 0.01 && cur < orig - 0.01 -> price = cur
+                cur < existing - 0.01 -> {
+                    if (listPrice == null || listPrice!! < existing - 0.01) listPrice = existing
+                    price = cur
+                }
+            }
+            if (orig != null) {
+                val p = price
+                if (p != null && orig > p + 0.01 &&
+                    (listPrice == null || listPrice!! <= p + 0.01 || listPrice!! > orig * 5.0)
+                ) {
                     listPrice = orig
                 }
             }
@@ -821,20 +901,193 @@ class ProductScraper(
         val brand: String? = null
     )
 
-    private fun darazPriceText(document: Document): String? {
-        val selectors = listOf(
-            ".pdp-price",
-            ".pdp-price_type_normal",
-            "[class*=pdp-price] span",
-            "[class*=pdp-price]",
-            ".pdp-product-price span",
-            ".pdp-product-price",
-            "[data-spm=price] span",
-            "span.price"
+    private fun extractStoreSpecificPrices(document: Document, host: String): Pair<Double?, Double?> {
+        val h = host.lowercase()
+        return when {
+            h.contains("amazon.") || h.contains("amzn.") -> extractAmazonPrices(document)
+            h.contains("daraz.") || h.contains("lazada.") -> extractDarazPrices(document)
+            else -> null to null
+        }
+    }
+
+    /**
+     * Amazon renders the selling price and the struck-through list price in separate `.a-price`
+     * blocks. `.a-text-price` / `.basisPrice` mark the original price, everything else is current.
+     */
+    private fun extractAmazonPrices(document: Document): Pair<Double?, Double?> {
+        fun amount(el: Element?): Double? {
+            el ?: return null
+            val text = el.text()
+            if (text.contains('%')) return null
+            // Amazon's hidden `.a-offscreen` text occasionally loses its decimal separator
+            // ("$26121" instead of "$261.21"), so rebuild from the visible whole/fraction parts.
+            val wholeDigits = el.selectFirst(".a-price-whole")?.text()
+                ?.filter { it.isDigit() }.orEmpty()
+            if (wholeDigits.isNotEmpty()) {
+                val whole = wholeDigits.toDoubleOrNull()
+                val fractionDigits = el.selectFirst(".a-price-fraction")?.text()
+                    ?.filter { it.isDigit() }.orEmpty()
+                if (whole != null) {
+                    return if (fractionDigits.isNotEmpty()) {
+                        whole + fractionDigits.toDouble() /
+                            Math.pow(10.0, fractionDigits.length.toDouble())
+                    } else {
+                        whole
+                    }
+                }
+            }
+            return MoneyParser.parse(el.selectFirst(".a-offscreen")?.text())
+                ?: MoneyParser.parse(text)
+                ?: MoneyParser.parse(el.attr("content"))
+        }
+
+        fun isOriginalBlock(el: Element): Boolean {
+            val cls = el.className().lowercase()
+            if (cls.contains("a-text-price") || cls.contains("basisprice")) return true
+            return el.parents().any { parent ->
+                val c = parent.className().lowercase()
+                c.contains("a-text-price") || c.contains("basisprice")
+            }
+        }
+
+        fun firstAmount(vararg selectors: String): Double? {
+            for (sel in selectors) {
+                for (el in document.select(sel).take(3)) {
+                    amount(el)?.let { return it }
+                }
+            }
+            return null
+        }
+
+        fun firstCurrent(vararg selectors: String): Double? {
+            for (sel in selectors) {
+                for (el in document.select(sel).take(3)) {
+                    if (isOriginalBlock(el)) continue
+                    amount(el)?.let { return it }
+                }
+            }
+            return null
+        }
+
+        var current = firstCurrent(
+            "#corePrice_feature_div .priceToPay",
+            "#corePriceDisplay_desktop_feature_div .priceToPay",
+            "#corePriceDisplay_mobile_feature_div .priceToPay",
+            "#corePrice_feature_div .a-price",
+            "#corePriceDisplay_desktop_feature_div .a-price",
+            "#corePriceDisplay_mobile_feature_div .a-price",
+            "#priceblock_ourprice",
+            "#priceblock_dealprice",
+            "#priceblock_saleprice",
+            "#tp_price_block_total_price_ww .a-price",
+            "#price_inside_buybox",
+            "#newBuyBoxPrice",
+            "#apex_desktop .priceToPay",
+            "#buybox .priceToPay"
         )
-        for (selector in selectors) {
+
+        var original = firstAmount(
+            "#corePrice_feature_div .basisPrice",
+            "#corePriceDisplay_desktop_feature_div .basisPrice",
+            "#corePriceDisplay_mobile_feature_div .basisPrice",
+            "#corePrice_feature_div .a-text-price",
+            "#corePriceDisplay_desktop_feature_div .a-text-price",
+            "#corePriceDisplay_mobile_feature_div .a-text-price",
+            "#listPrice",
+            "#priceblock_listprice"
+        )
+
+        // Some Amazon variants only expose a savings badge ("-25%"); derive the original from it.
+        if (original == null && current != null) {
+            val pctText = document.selectFirst("#corePrice_feature_div .savingsPercentage, .savingsPercentage")
+                ?.text()
+            original = listPriceFromDiscount(current, pctText)
+        }
+
+        if (current == null && original != null) {
+            current = original
+            original = null
+        }
+        if (original != null && current != null && original <= current + 0.01) original = null
+        return current to original
+    }
+
+    /**
+     * Daraz/Lazada price block: `pdp-price_type_normal` is the selling price, while
+     * `pdp-price_type_delete` (struck-through) is the original. The block also carries a
+     * discount badge ("-20%") we can fall back to when only the current price is rendered.
+     */
+    private fun extractDarazPrices(document: Document): Pair<Double?, Double?> {
+        val blocks = linkedSetOf<Element>()
+        listOf(
+            ".pdp-product-price",
+            ".pdp-mod-product-price",
+            "[data-qa-locator=product-price]",
+            "[class*=pdp-product-price]"
+        ).forEach { sel -> document.select(sel).take(4).forEach { blocks += it } }
+        if (blocks.isEmpty()) {
+            document.selectFirst("[class*=pdp-price]")?.let { blocks += it }
+        }
+
+        fun isOriginal(el: Element): Boolean {
+            val cls = el.className().lowercase()
+            return cls.contains("delete") || cls.contains("strike") || cls.contains("original") ||
+                cls.contains("old-price") || cls.contains("line-through")
+        }
+
+        fun priceOf(el: Element): Double? {
+            val cls = el.className().lowercase()
+            if (cls.contains("discount") || cls.contains("percent")) return null
+            val text = el.text()
+            if (text.contains('%')) return null
+            return MoneyParser.parse(text)
+        }
+
+        for (block in blocks) {
+            val priceEls = block.select("[class*=pdp-price], [class*=price]")
+                .toList()
+                .filter { priceOf(it) != null }
+            if (priceEls.isEmpty()) continue
+
+            val current = priceEls.firstOrNull { !isOriginal(it) }?.let { priceOf(it) }
+                ?: priceEls.mapNotNull { priceOf(it) }.minOrNull()
+                ?: continue
+            var original = priceEls.firstOrNull { isOriginal(it) }
+                ?.let { priceOf(it) }
+                ?.takeIf { it > current + 0.01 }
+
+            if (original == null) {
+                val discountText = block.selectFirst("[class*=discount]")?.text()
+                original = listPriceFromDiscount(current, discountText)
+            }
+            return current to original
+        }
+        return null to null
+    }
+
+    private fun darazPriceText(document: Document): String? {
+        // Prefer the selling-price element and never read the struck-through original ("delete")
+        // or the discount badge ("-20%").
+        val scoped = document.select(".pdp-product-price, .pdp-mod-product-price, [class*=pdp-product-price]")
+            .toList()
+            .flatMap { block -> block.select(".pdp-price, [class*=pdp-price]").toList() }
+        val candidates = if (scoped.isNotEmpty()) {
+            scoped
+        } else {
+            document.select(".pdp-price, [class*=pdp-price]").toList()
+        }
+        for (el in candidates) {
+            val cls = el.className().lowercase()
+            if (cls.contains("delete") || cls.contains("strike") || cls.contains("original") ||
+                cls.contains("old-price") || cls.contains("discount")
+            ) continue
+            val text = el.text().trim()
+            if (text.isEmpty() || text.contains('%')) continue
+            if (MoneyParser.parse(text) != null) return text
+        }
+        for (selector in listOf("[data-spm=price] span", "span.price")) {
             val text = document.selectFirst(selector)?.text()?.trim().orEmpty()
-            if (text.isNotEmpty() && MoneyParser.parse(text) != null) return text
+            if (text.isNotEmpty() && !text.contains('%') && MoneyParser.parse(text) != null) return text
         }
         return null
     }
@@ -1156,6 +1409,30 @@ class ProductScraper(
         return null
     }
 
+    /**
+     * Daraz/Lazada PDPs embed the selected SKU's price pair as structured objects:
+     * `"salePrice":{"value":1199}` and `"originalPrice":{"value":1500}`. The visible DOM is
+     * preferred, but this rescues pages that render the price block client-side.
+     */
+    private fun extractDarazScriptPricing(html: String): ScriptPricing? {
+        val anchor = html.indexOf("\"skuInfos\"")
+        if (anchor < 0) return null
+        val window = html.substring(anchor, (anchor + 12_000).coerceAtMost(html.length))
+
+        fun money(pattern: String): Double? =
+            Regex(pattern, RegexOption.IGNORE_CASE).find(window)
+                ?.groupValues?.getOrNull(1)?.let(MoneyParser::parse)
+
+        val sale = money(""""salePrice"\s*:\s*\{\s*"value"\s*:\s*"?([0-9][0-9,]*(?:\.[0-9]+)?)"?""")
+            ?: money(""""price"\s*:\s*\{\s*"value"\s*:\s*"?([0-9][0-9,]*(?:\.[0-9]+)?)"?""")
+        val original = money(""""originalPrice"\s*:\s*\{\s*"value"\s*:\s*"?([0-9][0-9,]*(?:\.[0-9]+)?)"?""")
+            ?: money(""""marketPrice"\s*:\s*\{\s*"value"\s*:\s*"?([0-9][0-9,]*(?:\.[0-9]+)?)"?""")
+
+        val price = sale ?: original ?: return null
+        val list = original?.takeIf { sale != null && it > price + 0.01 }
+        return ScriptPricing(price = price, listPrice = list)
+    }
+
     private fun extractScriptPricing(document: Document, pageUrl: String = ""): ScriptPricing? {
         val html = document.outerHtml()
         val host = runCatching { java.net.URI(pageUrl).host?.lowercase().orEmpty() }.getOrElse { "" }
@@ -1163,6 +1440,7 @@ class ProductScraper(
         extractTargetedScriptPricing(html, pageUrl)?.let { return it }
         extractJeeveePricing(html, host)?.let { return it }
         extractMuditaPricing(html, host)?.let { return it }
+        extractDarazScriptPricing(html)?.let { return it }
         val tracking = Regex("""pdpTrackingData\s*=\s*"((?:\\.|[^"\\])*)"""")
             .find(html)?.groupValues?.getOrNull(1)?.let(::unescapeJsString)
             ?: Regex("""pdpTrackingData\s*=\s*(\{.*?\})\s*;""", RegexOption.DOT_MATCHES_ALL)
@@ -1736,9 +2014,32 @@ class ProductScraper(
         return withScheme.toHttpUrlOrNull()?.toString()
     }
 
+    private fun browserRequest(url: String): Request.Builder {
+        val host = runCatching { java.net.URI(url).host?.lowercase().orEmpty() }.getOrDefault("")
+        val desktop = host.contains("amazon.") || host.contains("amzn.")
+        return Request.Builder()
+            .url(url)
+            .header("User-Agent", if (desktop) DESKTOP_USER_AGENT else USER_AGENT)
+            .header(
+                "Accept",
+                "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
+            )
+            .header("Accept-Language", "en-US,en;q=0.9")
+            .header("Upgrade-Insecure-Requests", "1")
+            .header("Sec-Fetch-Dest", "document")
+            .header("Sec-Fetch-Mode", "navigate")
+            .header("Sec-Fetch-Site", "none")
+            .header("Sec-Fetch-User", "?1")
+            .header("Cache-Control", "no-cache")
+    }
+
     companion object {
         private const val USER_AGENT =
             "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+
+        // Amazon serves a far more parseable (server-rendered) price block to a desktop client.
+        const val DESKTOP_USER_AGENT =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 
         fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)

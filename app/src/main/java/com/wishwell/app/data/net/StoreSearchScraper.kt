@@ -30,16 +30,37 @@ class StoreSearchScraper(
         targetCategoryHint: String? = null
     ): List<FoundCompareProduct> =
         withContext(Dispatchers.IO) {
-            val url = searchUrl.toHttpUrlOrNull()?.toString()
+            val parsedUrl = searchUrl.toHttpUrlOrNull()
                 ?: return@withContext emptyList()
+            val requestHost = parsedUrl.host.lowercase()
+            val isDaraz = requestHost.contains("daraz.") ||
+                storeName.contains("Daraz", ignoreCase = true)
+            // Daraz's catalog page is a JS shell without `ajax=true`; the AJAX variant returns
+            // the JSON list (prices, original prices, discounts) directly.
+            val url = parsedUrl.newBuilder()
+                .apply {
+                    if (isDaraz && parsedUrl.queryParameter("ajax") == null) {
+                        addQueryParameter("ajax", "true")
+                    }
+                }
+                .build()
+                .toString()
+            val desktop = requestHost.contains("amazon.") || requestHost.contains("amzn.") || isDaraz
             val request = Request.Builder()
                 .url(url)
-                .header("User-Agent", USER_AGENT)
+                .header(
+                    "User-Agent",
+                    if (desktop) ProductScraper.DESKTOP_USER_AGENT else USER_AGENT
+                )
                 .header(
                     "Accept",
                     "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
                 )
                 .header("Accept-Language", "en-US,en;q=0.9,np;q=0.7")
+                .header("Upgrade-Insecure-Requests", "1")
+                .header("Sec-Fetch-Dest", "document")
+                .header("Sec-Fetch-Mode", "navigate")
+                .header("Sec-Fetch-Site", "none")
                 .header("Cache-Control", "no-cache")
                 .build()
 
@@ -55,6 +76,11 @@ class StoreSearchScraper(
 
                     if (host.contains("daraz.") || storeName.contains("Daraz", ignoreCase = true)) {
                         products += parseDarazCatalog(body, base, storeName, currencyCode)
+                    }
+                    if (host.contains("amazon.") || host.contains("amzn.") ||
+                        storeName.contains("Amazon", ignoreCase = true)
+                    ) {
+                        products += parseAmazonCatalog(doc, base, storeName, currencyCode)
                     }
                     if (products.size < 3) {
                         products += parseGenericSearch(doc, body, base, storeName, currencyCode)
@@ -140,17 +166,105 @@ class StoreSearchScraper(
                         img.attr("src").ifBlank { img.attr("data-src").ifBlank { img.attr("data-ks-lazyload").ifBlank { img.attr("data-lazy-src") } } }
                     }
                     val price = findPriceNear(container) ?: MoneyParser.parse(container.selectFirst("[class*=price], .ooOxS, .hpIKP, .aBrP0")?.text().orEmpty())
+                    val original = container.selectFirst(
+                        ".hpIKP, [class*=original-price], [class*=old-price], [class*=strike], del, s"
+                    )?.text()?.let(MoneyParser::parse)
+                        ?.takeIf { price != null && it > price + 0.01 }
                     out += FoundCompareProduct(
                         storeName = resolvedStore,
                         title = title.take(180),
                         price = price,
                         currencyCode = code,
                         imageUrl = normalizeImageUrl(img),
-                        productUrl = href
+                        productUrl = href,
+                        listPrice = original
                     )
                 }
                 if (out.size >= 8) break
             }
+        }
+        return out.distinctBy { normalizeKey(it.productUrl, it.title) }.take(10)
+    }
+
+    /**
+     * Amazon search results. Each card carries the current price in `.a-price` and the
+     * struck-through list price in `.a-price.a-text-price`; both are read explicitly so
+     * discounts show up in comparison results.
+     */
+    private fun parseAmazonCatalog(
+        doc: Document,
+        baseUrl: String,
+        storeName: String,
+        currencyCode: String
+    ): List<FoundCompareProduct> {
+        val out = mutableListOf<FoundCompareProduct>()
+        val host = runCatching { URI(baseUrl).host.orEmpty() }.getOrDefault("")
+        val resolvedStore = storeName.ifBlank { stores.displayNameForHost(host) }.ifBlank { "Amazon" }
+        val code = currencyCode.ifBlank { stores.defaultCurrencyFor(host) }
+
+        var cards: List<org.jsoup.nodes.Element> = doc.select("div[data-component-type=s-search-result]")
+        if (cards.isEmpty()) cards = doc.select("div.s-result-item[data-asin]")
+        if (cards.isEmpty()) cards = doc.select("div[data-asin]").toList().filter { it.selectFirst("h2") != null }
+
+        fun priceFrom(card: org.jsoup.nodes.Element, wantOriginal: Boolean): Double? {
+            fun isOriginalBlock(el: org.jsoup.nodes.Element): Boolean {
+                val cls = el.className().lowercase()
+                if (cls.contains("a-text-price") || cls.contains("basisprice")) return true
+                return el.parents().any { parent ->
+                    val c = parent.className().lowercase()
+                    c.contains("a-text-price") || c.contains("basisprice")
+                }
+            }
+
+            val chosen = card.select(".a-price").firstOrNull { el ->
+                if (wantOriginal) isOriginalBlock(el) else !isOriginalBlock(el)
+            } ?: return null
+            val text = chosen.text()
+            if (text.contains('%')) return null
+            // Rebuild from visible whole/fraction parts: `.a-offscreen` can lose its decimal
+            // separator ("$26121" for $261.21) in some Amazon responses.
+            val wholeDigits = chosen.selectFirst(".a-price-whole")?.text()
+                ?.filter { it.isDigit() }.orEmpty()
+            if (wholeDigits.isNotEmpty()) {
+                val whole = wholeDigits.toDoubleOrNull()
+                val fractionDigits = chosen.selectFirst(".a-price-fraction")?.text()
+                    ?.filter { it.isDigit() }.orEmpty()
+                if (whole != null) {
+                    return if (fractionDigits.isNotEmpty()) {
+                        whole + fractionDigits.toDouble() /
+                            Math.pow(10.0, fractionDigits.length.toDouble())
+                    } else {
+                        whole
+                    }
+                }
+            }
+            return MoneyParser.parse(chosen.selectFirst(".a-offscreen")?.text() ?: text)
+        }
+
+        for (card in cards.take(20)) {
+            val anchor = card.selectFirst(
+                "h2 a, a.a-link-normal.s-no-outline, a[href*='/dp/'], a[href*='/gp/product/']"
+            ) ?: continue
+            val href = absUrl(baseUrl, anchor.attr("href")) ?: continue
+            if (isJunkUrl(href)) continue
+            val title = card.selectFirst("h2 a span, h2 span, .a-size-base-plus, .a-size-medium")
+                ?.text()?.trim()?.replace(Regex("\\s+"), " ")
+                ?.takeIf { it.length >= 4 }
+                ?: anchor.attr("title").trim().replace(Regex("\\s+"), " ")
+                    .takeIf { it.length >= 4 }
+                ?: continue
+            val price = priceFrom(card, wantOriginal = false)
+            val original = priceFrom(card, wantOriginal = true)
+                ?.takeIf { price != null && it > price + 0.01 }
+            out += FoundCompareProduct(
+                storeName = resolvedStore,
+                title = title.take(180),
+                price = price,
+                currencyCode = code,
+                imageUrl = normalizeImageUrl(card.selectFirst("img.s-image")?.attr("src")),
+                productUrl = href,
+                listPrice = original
+            )
         }
         return out.distinctBy { normalizeKey(it.productUrl, it.title) }.take(10)
     }
@@ -302,7 +416,21 @@ class StoreSearchScraper(
                 ?: item.optDouble("price").takeIf { it > 0 }
                 ?: item.optDouble("salePrice").takeIf { it > 0 }
             val orig = MoneyParser.parse(item.optString("originalPrice"))
+                ?: MoneyParser.parse(item.optString("original_price"))
+                ?: MoneyParser.parse(item.optString("mrp"))
+                ?: MoneyParser.parse(item.optString("wasPrice"))
+                ?: MoneyParser.parse(item.optString("was_price"))
+                ?: MoneyParser.parse(item.optString("compareAtPrice"))
+                ?: MoneyParser.parse(item.optString("compare_at_price"))
+                ?: MoneyParser.parse(item.optString("listPrice"))
                 ?: item.optDouble("originalPrice").takeIf { it > 0 }
+                ?: item.optDouble("original_price").takeIf { it > 0 }
+                ?: item.optDouble("mrp").takeIf { it > 0 }
+                // Daraz often ships only a discount label (e.g. "-20%") alongside the price.
+                ?: deriveListPriceFromDiscount(
+                    price,
+                    item.optString("discount").ifBlank { item.optString("discountText") }
+                )
             out += FoundCompareProduct(
                 storeName = storeName.ifBlank { "Daraz" },
                 title = title.take(180),
@@ -400,6 +528,29 @@ class StoreSearchScraper(
             }
             if (out.size >= 3) break
         }
+    }
+
+    /** Derives an original price from a discount label ("-20%", "Rs. 500 off") when only the current price is known. */
+    private fun deriveListPriceFromDiscount(current: Double?, discountRaw: String?): Double? {
+        if (current == null || current <= 0.0) return null
+        val raw = discountRaw?.trim().orEmpty()
+        if (raw.isEmpty() || raw.equals("null", ignoreCase = true)) return null
+
+        val percent = Regex("""([0-9]+(?:[.,][0-9]+)?)\s*%""").find(raw)
+            ?.groupValues?.getOrNull(1)
+            ?.replace(',', '.')
+            ?.toDoubleOrNull()
+        if (percent != null && percent > 0.0 && percent < 100.0) {
+            val list = current / (1.0 - percent / 100.0)
+            if (list > current + 0.01) return list
+        }
+
+        val amount = MoneyParser.parse(raw)
+        if (amount != null && amount > 0.0) {
+            val list = current + amount
+            if (list > current + 0.01) return list
+        }
+        return null
     }
 
     private fun findPriceNear(el: org.jsoup.nodes.Element): Double? {
