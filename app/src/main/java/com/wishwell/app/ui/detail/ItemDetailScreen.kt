@@ -396,7 +396,8 @@ private fun ItemDetailContent(
                         onClick = {
                             val currently = item?.isPurchased == true
                             onTogglePurchased(!currently)
-                        }
+                        },
+                        modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
                             imageVector = if (item?.isPurchased == true) Icons.Rounded.Done else Icons.Rounded.ShoppingBag,
