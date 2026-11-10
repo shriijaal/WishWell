@@ -127,6 +127,7 @@ internal fun WidgetListContent(
 ) {
     val colors = resolveColors(context, settings.theme)
     val alpha = settings.transparency.coerceIn(0, 100) / 100f
+    val accent = WidgetSettingsStore.parseAccentColor(settings.accentColor) ?: colors.forest
 
     Column(
         modifier = GlanceModifier
@@ -142,7 +143,7 @@ internal fun WidgetListContent(
                     text = title,
                     style = TextStyle(
                         color = ColorProvider(colors.ink),
-                        fontSize = 16.sp,
+                        fontSize = (16.sp * settings.fontSize.coerceIn(0.75f, 1.5f)),
                         fontWeight = FontWeight.Bold
                     ),
                     maxLines = 1
@@ -157,7 +158,7 @@ internal fun WidgetListContent(
             Spacer(modifier = GlanceModifier.width(8.dp))
             Box(
                 modifier = GlanceModifier
-                    .background(ColorProvider(colors.forest))
+                    .background(ColorProvider(accent))
                     .cornerRadius(10.dp)
                     .padding(horizontal = 10.dp, vertical = 4.dp)
                     .clickable(actionStartActivity(syncWidgetIntent()))
@@ -165,7 +166,7 @@ internal fun WidgetListContent(
                 Text(
                     text = "↻ Sync",
                     style = TextStyle(
-                        color = ColorProvider(colors.ink),
+                        color = ColorProvider(Color.White),
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -187,7 +188,16 @@ internal fun WidgetListContent(
         } else {
             LazyColumn(modifier = GlanceModifier.fillMaxSize()) {
                 items(entries, itemId = { it.id }) { entry ->
-                    EntryRow(entry = entry, colors = colors, alpha = alpha, style = settings.style)
+                    EntryRow(
+                        entry = entry,
+                        colors = colors,
+                        alpha = alpha,
+                        style = settings.style,
+                        accent = accent,
+                        showPrice = settings.showPrice,
+                        showStore = settings.showStore,
+                        fontSize = settings.fontSize
+                    )
                     Spacer(modifier = GlanceModifier.height(12.dp))
                 }
             }
@@ -200,14 +210,24 @@ private fun EntryRow(
     entry: WidgetEntry,
     colors: WidgetColorsHolder,
     alpha: Float,
-    style: String = "list"
+    style: String = "list",
+    accent: Color = Color(0xFF1F3D2E),
+    showPrice: Boolean = true,
+    showStore: Boolean = true,
+    fontSize: Float = 1.0f
 ) {
     val isCompact = style == "compact"
+    val isCard = style == "card"
+    val baseSize = if (isCompact) 11f else 14f
+    val titleSize = baseSize * fontSize.coerceIn(0.75f, 1.5f)
+    val subtitleSize = 10f * fontSize.coerceIn(0.75f, 1.5f)
 
     Box(
         modifier = GlanceModifier
             .fillMaxWidth()
-            .background(ColorProvider(colors.sunken.copy(alpha = alpha)))
+            .background(
+                if (isCard) ColorProvider(accent.copy(alpha = 0.10f)) else ColorProvider(colors.sunken.copy(alpha = alpha))
+            )
             .cornerRadius(16.dp)
             .padding(horizontal = 16.dp, vertical = 12.dp)
             .clickable(actionStartActivity(appIntent(entry.id))),
@@ -219,25 +239,40 @@ private fun EntryRow(
                     text = entry.title,
                     style = TextStyle(
                         color = ColorProvider(colors.ink),
-                        fontSize = if (isCompact) 11.sp else 14.sp,
+                        fontSize = titleSize.sp,
                         fontWeight = FontWeight.Medium
                     ),
                     maxLines = if (isCompact) 1 else 2
                 )
                 if (!isCompact) {
                     Spacer(modifier = GlanceModifier.height(2.dp))
-                    Text(
-                        text = "${entry.storeName} · ${entry.priceText}",
-                        style = TextStyle(color = ColorProvider(colors.muted), fontSize = 10.sp),
-                        maxLines = 1
-                    )
+                    Row(
+                        modifier = GlanceModifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (showStore) {
+                            Text(
+                                text = entry.storeName,
+                                style = TextStyle(color = ColorProvider(colors.muted), fontSize = subtitleSize.sp),
+                                maxLines = 1
+                            )
+                            Spacer(modifier = GlanceModifier.width(8.dp))
+                        }
+                        if (showPrice) {
+                            Text(
+                                text = entry.priceText,
+                                style = TextStyle(color = ColorProvider(colors.muted), fontSize = subtitleSize.sp),
+                                maxLines = 1
+                            )
+                        }
+                    }
                 }
             }
             entry.badge?.let { badge ->
                 Spacer(modifier = GlanceModifier.width(8.dp))
                 Box(
                     modifier = GlanceModifier
-                        .background(ColorProvider(if (entry.isDrop) Color(0xFFDCE8D6) else colors.hairline))
+                        .background(ColorProvider(if (entry.isDrop) Color(0xFFDCE8D6) else accent))
                         .cornerRadius(8.dp)
                         .padding(horizontal = 6.dp, vertical = 3.dp)
                 ) {
@@ -245,7 +280,7 @@ private fun EntryRow(
                         text = badge,
                         style = TextStyle(
                             color = ColorProvider(
-                                if (entry.isDrop) Color(0xFF1F3D2E) else colors.ink
+                                if (entry.isDrop) Color(0xFF1F3D2E) else Color.White
                             ),
                             fontSize = if (isCompact) 8.sp else 10.sp,
                             fontWeight = FontWeight.Bold

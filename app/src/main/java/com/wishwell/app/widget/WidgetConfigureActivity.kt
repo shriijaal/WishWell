@@ -8,9 +8,11 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,11 +22,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -94,13 +99,16 @@ private fun WidgetConfigureScreen(
     appWidgetId: Int,
     onFinished: () -> Unit
 ) {
+    val context = LocalContext.current
     val extra = LocalWishExtraColors.current
     val colors = MaterialTheme.colorScheme
+    var settings by remember { mutableStateOf(WidgetSettingsStore.load(context, "default")) }
+    val accent = WidgetSettingsStore.parseAccentColor(settings.accentColor) ?: colors.primary
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(colors.surface)
+            .background(accent.copy(alpha = 0.12f))
             .padding(16.dp)
             .verticalScroll(rememberScrollState())
     ) {
@@ -119,6 +127,8 @@ private fun WidgetConfigureScreen(
 
         WidgetSettingsEditor(
             widgetKey = "default",
+            settings = settings,
+            onSettingsChange = { settings = it },
             onSave = onFinished
         )
     }
@@ -127,12 +137,14 @@ private fun WidgetConfigureScreen(
 @Composable
 private fun WidgetSettingsEditor(
     widgetKey: String,
+    settings: WidgetSettingsStore.WidgetSettings,
+    onSettingsChange: (WidgetSettingsStore.WidgetSettings) -> Unit,
     onSave: () -> Unit
 ) {
     val context = LocalContext.current
     val extra = LocalWishExtraColors.current
     val colors = MaterialTheme.colorScheme
-    var settings by remember { mutableStateOf(WidgetSettingsStore.load(context, widgetKey)) }
+    val accent = WidgetSettingsStore.parseAccentColor(settings.accentColor) ?: colors.primary
 
     // ── Theme ──
     SectionLabel("Theme")
@@ -153,7 +165,7 @@ private fun WidgetSettingsEditor(
                 WishPill(
                     text = label,
                     selected = settings.theme == key,
-                    onClick = { settings = settings.copy(theme = key) }
+                    onClick = { onSettingsChange(settings.copy(theme = key)) }
                 )
             }
         }
@@ -180,7 +192,7 @@ private fun WidgetSettingsEditor(
                 WishPill(
                     text = label,
                     selected = settings.style == key,
-                    onClick = { settings = settings.copy(style = key) }
+                    onClick = { onSettingsChange(settings.copy(style = key)) }
                 )
             }
         }
@@ -188,37 +200,165 @@ private fun WidgetSettingsEditor(
 
     Spacer(modifier = Modifier.height(18.dp))
 
-    // ── Transparency ──
-    SectionLabel("Transparency")
+    // ── Content ──
+    SectionLabel("Content")
     Spacer(modifier = Modifier.height(10.dp))
     SettingsCard {
-        Text(
-            text = "Lower = more transparent (background shows through).",
-            style = MaterialTheme.typography.bodySmall,
-            color = extra.muted
-        )
-        Spacer(modifier = Modifier.height(10.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // Item count limit
             Text(
-                text = "${settings.transparency}%",
-                style = MaterialTheme.typography.bodyMedium,
-                color = extra.muted,
-                modifier = Modifier.width(40.dp)
+                text = "Max items",
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.onSurface
             )
-            Spacer(modifier = Modifier.width(8.dp))
-            Slider(
-                value = settings.transparency / 100f,
-                onValueChange = { settings = settings.copy(transparency = (it * 100).roundToInt()) },
-                valueRange = 0f..1f,
-                colors = SliderDefaults.colors(
-                    activeTrackColor = colors.primary,
-                    inactiveTrackColor = extra.hairline,
-                    thumbColor = colors.primary
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                listOf(3, 5, 8, 10).forEach { count ->
+                    val selected = settings.limit == count
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .background(if (selected) accent else Color.Transparent, shape = CircleShape)
+                            .clickable { onSettingsChange(settings.copy(limit = count)) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = count.toString(),
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                            color = if (selected) Color.White else colors.onSurface
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Sort order
+            Text(
+                text = "Sort by",
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.onSurface
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(
+                    "recent" to "Recent",
+                    "name" to "Name",
+                    "price" to "Price"
+                ).forEach { (key, label) ->
+                    WishPill(
+                        text = label,
+                        selected = settings.sortOrder == key,
+                        onClick = { onSettingsChange(settings.copy(sortOrder = key)) }
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Toggles row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                ToggleOption(
+                    checked = settings.showPrice,
+                    label = "Show price",
+                    onChange = { onSettingsChange(settings.copy(showPrice = it)) },
+                    colors = colors,
+                    extra = extra
                 )
+                ToggleOption(
+                    checked = settings.showStore,
+                    label = "Show store",
+                    onChange = { onSettingsChange(settings.copy(showStore = it)) },
+                    colors = colors,
+                    extra = extra
+                )
+                ToggleOption(
+                    checked = settings.dropsOnly,
+                    label = "Deals only",
+                    onChange = { onSettingsChange(settings.copy(dropsOnly = it)) },
+                    colors = colors,
+                    extra = extra
+                )
+            }
+        }
+    }
+
+    Spacer(modifier = Modifier.height(18.dp))
+
+    // ── Appearance ──
+    SectionLabel("Appearance")
+    Spacer(modifier = Modifier.height(10.dp))
+    SettingsCard {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // Accent color picker
+            Text(
+                text = "Accent color",
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.onSurface
             )
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                val accentSwatches = listOf(
+                    null to "Auto",
+                    "#1F3D2E" to "Forest",
+                    "#B3562A" to "Terracotta",
+                    "#5B7141" to "Moss",
+                    "#DDF06B" to "Lime"
+                )
+                accentSwatches.forEach { (hex, label) ->
+                    val selected = settings.accentColor == hex
+                    val swatchColor = WidgetSettingsStore.parseAccentColor(hex) ?: colors.primary
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .background(if (selected) Color.White else Color.Transparent, shape = CircleShape)
+                            .clickable { onSettingsChange(settings.copy(accentColor = hex)) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(if (selected) 20.dp else 24.dp)
+                                .background(swatchColor, shape = CircleShape)
+                        )
+                    }
+                    if (accentSwatches.last() != accentSwatches.find { it.first == hex }) {
+                        Spacer(modifier = Modifier.width(4.dp))
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Font size
+            Text(
+                text = "Text size",
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.onSurface
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "${(settings.fontSize * 100).toInt()}%",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = extra.muted,
+                    modifier = Modifier.width(40.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Slider(
+                    value = settings.fontSize,
+                    onValueChange = { onSettingsChange(settings.copy(fontSize = it)) },
+                    valueRange = 0.75f..1.5f,
+                    colors = SliderDefaults.colors(
+                        activeTrackColor = accent,
+                        inactiveTrackColor = extra.hairline,
+                        thumbColor = accent
+                    )
+                )
+            }
         }
     }
 
@@ -234,10 +374,10 @@ private fun WidgetSettingsEditor(
         ) {
             Switch(
                 checked = settings.blur,
-                onCheckedChange = { settings = settings.copy(blur = it) },
+                onCheckedChange = { onSettingsChange(settings.copy(blur = it)) },
                 colors = SwitchDefaults.colors(
                     checkedThumbColor = colors.onPrimary,
-                    checkedTrackColor = colors.primary,
+                    checkedTrackColor = accent,
                     uncheckedThumbColor = extra.muted,
                     uncheckedTrackColor = extra.hairline
                 )
@@ -276,8 +416,49 @@ private fun WidgetSettingsEditor(
             Text(
                 text = "Save",
                 style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                color = colors.primary
+                color = accent
             )
         }
+    }
+}
+
+/**
+ * Compact toggle row: pill-style checkbox with label.
+ */
+@Composable
+private fun ToggleOption(
+    checked: Boolean,
+    label: String,
+    onChange: (Boolean) -> Unit,
+    colors: androidx.compose.material3.ColorScheme,
+    extra: com.wishwell.app.ui.theme.WishExtraColors
+) {
+    Row(
+        modifier = Modifier.clickable { onChange(!checked) },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Surface(
+            shape = CircleShape,
+            color = if (checked) colors.primary else Color.Transparent,
+            border = BorderStroke(1.dp, if (checked) colors.primary else extra.hairline),
+            modifier = Modifier.size(20.dp)
+        ) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                if (checked) {
+                    Box(
+                        modifier = Modifier.size(8.dp).background(colors.onPrimary)
+                    )
+                }
+            }
+        }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (checked) colors.primary else colors.onSurface
+        )
     }
 }

@@ -40,8 +40,13 @@ import kotlinx.coroutines.launch
 
 class WishlistedItemsWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, glanceId: GlanceId) {
-        val entries = WidgetData.load(context, dropsOnly = false, limit = 8)
         val settings = WidgetSettingsStore.load(context, "default")
+        val entries = WidgetData.load(
+            context = context,
+            dropsOnly = settings.dropsOnly,
+            sortOrder = settings.sortOrder,
+            limit = settings.limit
+        )
         provideContent {
             WidgetListContent(
                 context = context,

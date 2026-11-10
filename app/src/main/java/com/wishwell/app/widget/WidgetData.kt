@@ -18,7 +18,12 @@ internal data class WidgetEntry(
 
 internal object WidgetData {
 
-    suspend fun load(context: Context, dropsOnly: Boolean, limit: Int): List<WidgetEntry> =
+    suspend fun load(
+        context: Context,
+        dropsOnly: Boolean = false,
+        sortOrder: String = "recent",
+        limit: Int = 8
+    ): List<WidgetEntry> =
         withContext(Dispatchers.IO) {
             runCatching {
                 val app = context.applicationContext as? WishwellApp ?: return@runCatching emptyList()
@@ -26,15 +31,15 @@ internal object WidgetData {
                     .asSequence()
                     .filter { !it.item.isArchived }
                     .let { seq ->
-                        if (dropsOnly) {
+                        val filtered = if (dropsOnly) {
                             seq.filter { (it.discountPercent ?: 0) > 0 || it.isAtLowest }
-                                .sortedWith(
-                                    compareByDescending<ItemWithStats> { it.isAtLowest }
-                                        .thenByDescending { it.discountPercent ?: 0 }
-                                        .thenByDescending { it.item.updatedAt }
-                                )
                         } else {
-                            seq.sortedByDescending { maxOf(it.item.updatedAt, it.item.createdAt) }
+                            seq
+                        }
+                        when (sortOrder) {
+                            "name" -> filtered.sortedBy { it.item.title }
+                            "price" -> filtered.sortedByDescending { it.price }
+                            else -> filtered.sortedByDescending { maxOf(it.item.updatedAt, it.item.createdAt) }
                         }
                     }
                     .take(limit)
