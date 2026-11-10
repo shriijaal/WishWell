@@ -405,7 +405,7 @@ private fun ItemDetailContent(
                             modifier = Modifier.size(20.dp)
                         )
                     }
-                    Spacer(Modifier.width(4.dp))
+                    Spacer(Modifier.width(6.dp))
                     Text(
                         text = if (item?.isPurchased == true) "Bought" else "Not owned",
                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
