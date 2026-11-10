@@ -129,14 +129,16 @@ fun WishPill(
     modifier: Modifier = Modifier,
     leadingIcon: ImageVector? = null,
     leadingContent: (@Composable () -> Unit)? = null,
-    trailingIcon: ImageVector? = null
+    trailingIcon: ImageVector? = null,
+    accentColor: Color? = null
 ) {
     val colors = MaterialTheme.colorScheme
     val extra = LocalWishExtraColors.current
+    val pillColor = accentColor ?: colors.primary
     Surface(
         modifier = modifier.clip(CircleShape).clickable(onClick = onClick),
         shape = CircleShape,
-        color = if (selected) colors.primary else Color.Transparent,
+        color = if (selected) pillColor else Color.Transparent,
         border = if (selected) null else BorderStroke(1.dp, extra.hairline)
     ) {
         Row(
@@ -150,14 +152,14 @@ fun WishPill(
                 Icon(
                     imageVector = leadingIcon,
                     contentDescription = null,
-                    tint = if (selected) colors.onPrimary else extra.muted,
+                    tint = if (selected) Color.White else extra.muted,
                     modifier = Modifier.size(14.dp)
                 )
             }
             Text(
                 text = text,
                 style = MaterialTheme.typography.labelLarge,
-                color = if (selected) colors.onPrimary else colors.onSurface,
+                color = if (selected) Color.White else colors.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -165,7 +167,7 @@ fun WishPill(
                 Icon(
                     imageVector = trailingIcon,
                     contentDescription = null,
-                    tint = if (selected) colors.onPrimary else extra.muted,
+                    tint = if (selected) Color.White else extra.muted,
                     modifier = Modifier.size(14.dp)
                 )
             }
@@ -1128,11 +1130,15 @@ fun ChartPlaceholder(text: String, modifier: Modifier = Modifier) {
 
 
 @Composable
-fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
+fun SettingsCard(
+    accentColor: Color? = null,
+    content: @Composable ColumnScope.() -> Unit
+) {
     val extra = LocalWishExtraColors.current
+    val colors = MaterialTheme.colorScheme
     Surface(
         shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surface,
+        color = accentColor ?: colors.surface,
         border = BorderStroke(1.dp, extra.hairline),
         modifier = Modifier.fillMaxWidth()
     ) {

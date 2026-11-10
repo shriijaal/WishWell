@@ -143,7 +143,8 @@ private fun WidgetEditScreen(
                 WishPill(
                     text = label,
                     selected = selected,
-                    onClick = { settings = settings.copy(style = key) }
+                    onClick = { settings = settings.copy(style = key) },
+                    accentColor = accent
                 )
             }
         }
@@ -159,7 +160,7 @@ private fun WidgetEditScreen(
         Spacer(modifier = Modifier.height(8.dp))
         Surface(
             shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.surface,
+            color = accent.copy(alpha = 0.10f),
             border = BorderStroke(1.dp, extra.hairline),
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -207,7 +208,8 @@ private fun WidgetEditScreen(
                         WishPill(
                             text = label,
                             selected = settings.sortOrder == key,
-                            onClick = { settings = settings.copy(sortOrder = key) }
+                            onClick = { settings = settings.copy(sortOrder = key) },
+                            accentColor = accent
                         )
                     }
                 }
@@ -224,21 +226,24 @@ private fun WidgetEditScreen(
                         label = "Show price",
                         onChange = { settings = settings.copy(showPrice = it) },
                         colors = colors,
-                        extra = extra
+                        extra = extra,
+                        accentColor = accent
                     )
                     ToggleOption(
                         checked = settings.showStore,
                         label = "Show store",
                         onChange = { settings = settings.copy(showStore = it) },
                         colors = colors,
-                        extra = extra
+                        extra = extra,
+                        accentColor = accent
                     )
                     ToggleOption(
                         checked = settings.dropsOnly,
                         label = "Deals only",
                         onChange = { settings = settings.copy(dropsOnly = it) },
                         colors = colors,
-                        extra = extra
+                        extra = extra,
+                        accentColor = accent
                     )
                 }
             }
@@ -255,7 +260,7 @@ private fun WidgetEditScreen(
         Spacer(modifier = Modifier.height(8.dp))
         Surface(
             shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.surface,
+            color = accent.copy(alpha = 0.10f),
             border = BorderStroke(1.dp, extra.hairline),
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -430,7 +435,8 @@ private fun ToggleOption(
     label: String,
     onChange: (Boolean) -> Unit,
     colors: androidx.compose.material3.ColorScheme,
-    extra: com.wishwell.app.ui.theme.WishExtraColors
+    extra: com.wishwell.app.ui.theme.WishExtraColors,
+    accentColor: Color
 ) {
     Row(
         modifier = Modifier.clickable { onChange(!checked) },
@@ -439,8 +445,8 @@ private fun ToggleOption(
     ) {
         Surface(
             shape = CircleShape,
-            color = if (checked) colors.primary else Color.Transparent,
-            border = BorderStroke(1.dp, if (checked) colors.primary else extra.hairline),
+            color = if (checked) accentColor else Color.Transparent,
+            border = BorderStroke(1.dp, if (checked) accentColor else extra.hairline),
             modifier = Modifier.size(20.dp)
         ) {
             Box(
@@ -449,7 +455,7 @@ private fun ToggleOption(
             ) {
                 if (checked) {
                     Box(
-                        modifier = Modifier.size(8.dp).background(colors.onPrimary)
+                        modifier = Modifier.size(8.dp).background(Color.White)
                     )
                 }
             }
@@ -457,7 +463,7 @@ private fun ToggleOption(
         Text(
             text = label,
             style = MaterialTheme.typography.bodyMedium,
-            color = if (checked) colors.primary else colors.onSurface
+            color = if (checked) accentColor else colors.onSurface
         )
     }
 }

@@ -84,7 +84,7 @@ object WidgetSettingsStore {
         editor.putBoolean(dropsOnlyKey(widgetKey), settings.dropsOnly)
         editor.putString(accentColorKey(widgetKey), settings.accentColor)
         editor.putFloat(fontSizeKey(widgetKey), settings.fontSize)
-        editor.apply()
+        editor.commit()
     }
 
     /** Parses a hex "#RRGGBB" string to a Compose Color, or null if invalid. */

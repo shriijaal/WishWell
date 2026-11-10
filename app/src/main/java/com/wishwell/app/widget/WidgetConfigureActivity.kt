@@ -149,7 +149,7 @@ private fun WidgetSettingsEditor(
     // ── Theme ──
     SectionLabel("Theme")
     Spacer(modifier = Modifier.height(10.dp))
-    SettingsCard {
+    SettingsCard(accentColor = accent) {
         Text(
             text = "Choose how the widget looks. System follows your device's light/dark setting.",
             style = MaterialTheme.typography.bodySmall,
@@ -165,7 +165,8 @@ private fun WidgetSettingsEditor(
                 WishPill(
                     text = label,
                     selected = settings.theme == key,
-                    onClick = { onSettingsChange(settings.copy(theme = key)) }
+                    onClick = { onSettingsChange(settings.copy(theme = key)) },
+                    accentColor = accent
                 )
             }
         }
@@ -176,7 +177,7 @@ private fun WidgetSettingsEditor(
     // ── Style ──
     SectionLabel("Style")
     Spacer(modifier = Modifier.height(10.dp))
-    SettingsCard {
+    SettingsCard(accentColor = accent) {
         Text(
             text = "Choose how items are laid out in the widget.",
             style = MaterialTheme.typography.bodySmall,
@@ -192,7 +193,8 @@ private fun WidgetSettingsEditor(
                 WishPill(
                     text = label,
                     selected = settings.style == key,
-                    onClick = { onSettingsChange(settings.copy(style = key)) }
+                    onClick = { onSettingsChange(settings.copy(style = key)) },
+                    accentColor = accent
                 )
             }
         }
@@ -203,7 +205,7 @@ private fun WidgetSettingsEditor(
     // ── Content ──
     SectionLabel("Content")
     Spacer(modifier = Modifier.height(10.dp))
-    SettingsCard {
+    SettingsCard(accentColor = accent) {
         Column(modifier = Modifier.fillMaxWidth()) {
             // Item count limit
             Text(
@@ -248,7 +250,8 @@ private fun WidgetSettingsEditor(
                     WishPill(
                         text = label,
                         selected = settings.sortOrder == key,
-                        onClick = { onSettingsChange(settings.copy(sortOrder = key)) }
+                        onClick = { onSettingsChange(settings.copy(sortOrder = key)) },
+                        accentColor = accent
                     )
                 }
             }
@@ -265,21 +268,24 @@ private fun WidgetSettingsEditor(
                     label = "Show price",
                     onChange = { onSettingsChange(settings.copy(showPrice = it)) },
                     colors = colors,
-                    extra = extra
+                    extra = extra,
+                    accentColor = accent
                 )
                 ToggleOption(
                     checked = settings.showStore,
                     label = "Show store",
                     onChange = { onSettingsChange(settings.copy(showStore = it)) },
                     colors = colors,
-                    extra = extra
+                    extra = extra,
+                    accentColor = accent
                 )
                 ToggleOption(
                     checked = settings.dropsOnly,
                     label = "Deals only",
                     onChange = { onSettingsChange(settings.copy(dropsOnly = it)) },
                     colors = colors,
-                    extra = extra
+                    extra = extra,
+                    accentColor = accent
                 )
             }
         }
@@ -364,10 +370,46 @@ private fun WidgetSettingsEditor(
 
     Spacer(modifier = Modifier.height(18.dp))
 
+    // ── Transparency ──
+    SectionLabel("Transparency")
+    Spacer(modifier = Modifier.height(10.dp))
+    SettingsCard(accentColor = accent) {
+        Text(
+            text = "Lower = more transparent (background shows through).",
+            style = MaterialTheme.typography.bodySmall,
+            color = extra.muted
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "${settings.transparency}%",
+                style = MaterialTheme.typography.bodyMedium,
+                color = extra.muted,
+                modifier = Modifier.width(40.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Slider(
+                value = settings.transparency / 100f,
+                onValueChange = { onSettingsChange(settings.copy(transparency = (it * 100).roundToInt())) },
+                valueRange = 0f..1f,
+                colors = SliderDefaults.colors(
+                    activeTrackColor = accent,
+                    inactiveTrackColor = extra.hairline,
+                    thumbColor = accent
+                )
+            )
+        }
+    }
+
+    Spacer(modifier = Modifier.height(18.dp))
+
     // ── Blur ──
     SectionLabel("Blur background")
     Spacer(modifier = Modifier.height(10.dp))
-    SettingsCard {
+    SettingsCard(accentColor = accent) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -431,7 +473,8 @@ private fun ToggleOption(
     label: String,
     onChange: (Boolean) -> Unit,
     colors: androidx.compose.material3.ColorScheme,
-    extra: com.wishwell.app.ui.theme.WishExtraColors
+    extra: com.wishwell.app.ui.theme.WishExtraColors,
+    accentColor: Color
 ) {
     Row(
         modifier = Modifier.clickable { onChange(!checked) },
@@ -440,8 +483,8 @@ private fun ToggleOption(
     ) {
         Surface(
             shape = CircleShape,
-            color = if (checked) colors.primary else Color.Transparent,
-            border = BorderStroke(1.dp, if (checked) colors.primary else extra.hairline),
+            color = if (checked) accentColor else Color.Transparent,
+            border = BorderStroke(1.dp, if (checked) accentColor else extra.hairline),
             modifier = Modifier.size(20.dp)
         ) {
             Box(
@@ -450,7 +493,7 @@ private fun ToggleOption(
             ) {
                 if (checked) {
                     Box(
-                        modifier = Modifier.size(8.dp).background(colors.onPrimary)
+                        modifier = Modifier.size(8.dp).background(Color.White)
                     )
                 }
             }
@@ -458,7 +501,7 @@ private fun ToggleOption(
         Text(
             text = label,
             style = MaterialTheme.typography.bodyMedium,
-            color = if (checked) colors.primary else colors.onSurface
+            color = if (checked) accentColor else colors.onSurface
         )
     }
 }
