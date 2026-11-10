@@ -139,7 +139,7 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
             val matchesStore = f.stores.isEmpty() || item.item.storeName in f.stores
 
             val matchesPurchased = when {
-                f.showPurchased -> true
+                f.showPurchased -> item.item.isPurchased && !item.item.isArchived
                 else -> !item.item.isPurchased
             }
 
