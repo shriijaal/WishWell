@@ -136,6 +136,14 @@ internal fun WidgetListContent(
             .padding(16.dp)
             .clickable(actionStartActivity(appIntent()))
     ) {
+        // ── Blur overlay (visual indicator when blur is enabled) ──
+        if (settings.blur) {
+            Box(
+                modifier = GlanceModifier
+                    .fillMaxSize()
+                    .background(ColorProvider(accent.copy(alpha = 0.05f)))
+            ) { }
+        }
         // ── Header ──
         Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = GlanceModifier.defaultWeight()) {
@@ -186,8 +194,13 @@ internal fun WidgetListContent(
         if (entries.isEmpty()) {
             WidgetSkeletonLoader(colors = colors, alpha = alpha, style = settings.style, count = 3)
         } else {
+            val maxEntries = when (settings.widgetSize) {
+                "small" -> 3
+                "large" -> 12
+                else -> 8
+            }
             LazyColumn(modifier = GlanceModifier.fillMaxSize()) {
-                items(entries, itemId = { it.id }) { entry ->
+                items(items = entries.take(maxEntries)) { entry ->
                     EntryRow(
                         entry = entry,
                         colors = colors,
@@ -198,7 +211,6 @@ internal fun WidgetListContent(
                         showStore = settings.showStore,
                         fontSize = settings.fontSize
                     )
-                    Spacer(modifier = GlanceModifier.height(12.dp))
                 }
             }
         }

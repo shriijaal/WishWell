@@ -1,34 +1,31 @@
 package com.wishwell.app.widget
 
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -48,6 +45,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wishwell.app.ui.components.WishPill
 import com.wishwell.app.ui.theme.LocalWishExtraColors
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 class WidgetEditActivity : ComponentActivity() {
@@ -73,9 +73,10 @@ private fun WidgetEditScreen(
     val colors = MaterialTheme.colorScheme
     var settings by remember { mutableStateOf(WidgetSettingsStore.load(context, widgetKey)) }
     val accent = WidgetSettingsStore.parseAccentColor(settings.accentColor) ?: colors.primary
-
-    val themes = listOf("system" to "System", "light" to "Light", "dark" to "Dark")
-    val styles = listOf("list" to "List", "card" to "Card", "compact" to "Compact")
+    var showingExport by remember { mutableStateOf(false) }
+    var exportJson by remember { mutableStateOf("") }
+    var importText by remember { mutableStateOf("") }
+    var importResult by remember { mutableStateOf<String?>(null) }
 
     Column(
         modifier = Modifier
@@ -106,7 +107,11 @@ private fun WidgetEditScreen(
         )
         Spacer(modifier = Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            themes.forEach { (key, label) ->
+            listOf(
+                "system" to "System",
+                "light" to "Light",
+                "dark" to "Dark"
+            ).forEach { (key, label) ->
                 val selected = settings.theme == key
                 Surface(
                     shape = RoundedCornerShape(12.dp),
@@ -138,12 +143,46 @@ private fun WidgetEditScreen(
         )
         Spacer(modifier = Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            styles.forEach { (key, label) ->
+            listOf(
+                "list" to "List",
+                "card" to "Card",
+                "compact" to "Compact"
+            ).forEach { (key, label) ->
                 val selected = settings.style == key
                 WishPill(
                     text = label,
                     selected = selected,
                     onClick = { settings = settings.copy(style = key) },
+                    accentColor = accent
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // Widget size
+        Text(
+            text = "Widget size",
+            style = MaterialTheme.typography.titleMedium,
+            color = colors.onSurface
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(
+                "small" to "Small",
+                "medium" to "Medium",
+                "large" to "Large"
+            ).forEach { (key, label) ->
+                val selected = settings.widgetSize == key
+                val entryCount = when (key) {
+                    "small" -> 3
+                    "large" -> 12
+                    else -> 8
+                }
+                WishPill(
+                    text = "$label ($entryCount)",
+                    selected = selected,
+                    onClick = { settings = settings.copy(widgetSize = key) },
                     accentColor = accent
                 )
             }
@@ -404,7 +443,111 @@ private fun WidgetEditScreen(
             }
         }
 
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // Import / Export
+        Text(
+            text = "Import / Export",
+            style = MaterialTheme.typography.titleMedium,
+            color = colors.onSurface
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = accent.copy(alpha = 0.10f),
+            border = BorderStroke(1.dp, extra.hairline),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(
+                        onClick = {
+                            exportJson = WidgetSettingsStore.exportToJson(settings)
+                            showingExport = true
+                        }
+                    ) {
+                        Text(text = "Export", style = MaterialTheme.typography.labelLarge, color = accent)
+                    }
+                    TextButton(
+                        onClick = { importText = ""; importResult = null; showingExport = false }
+                    ) {
+                        Text(text = "Import…", style = MaterialTheme.typography.labelLarge, color = accent)
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "Export saves your widget settings as JSON you can paste into another widget.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = extra.muted
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // Reset
+        Text(
+            text = "Reset",
+            style = MaterialTheme.typography.titleMedium,
+            color = colors.onSurface
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = accent.copy(alpha = 0.10f),
+            border = BorderStroke(1.dp, extra.hairline),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(
+                        onClick = {
+                            val defaults = WidgetSettingsStore.defaultSettings()
+                            settings = defaults
+                            WidgetSettingsStore.save(context, widgetKey, defaults)
+                            CoroutineScope(Dispatchers.IO).launch {
+                                runCatching { WishwellWidgetUpdater.updateAll(context) }
+                            }
+                        }
+                    ) {
+                        Text(text = "Reset to defaults", style = MaterialTheme.typography.labelLarge, color = accent)
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "Restores all settings to their factory values.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = extra.muted
+                )
+            }
+        }
+
         Spacer(modifier = Modifier.height(32.dp))
+
+        // Live preview
+        Text(
+            text = "Live preview",
+            style = MaterialTheme.typography.titleMedium,
+            color = colors.onSurface
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        WidgetPreview(
+            context = context,
+            settings = settings,
+            accent = accent,
+            colors = colors,
+            extra = extra
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -413,6 +556,9 @@ private fun WidgetEditScreen(
             TextButton(
                 onClick = {
                     WidgetSettingsStore.save(context, widgetKey, settings)
+                    CoroutineScope(Dispatchers.IO).launch {
+                        runCatching { WishwellWidgetUpdater.updateAll(context) }
+                    }
                     onClose()
                 }
             ) {
@@ -422,6 +568,36 @@ private fun WidgetEditScreen(
                     color = accent
                 )
             }
+        }
+
+        // Export dialog
+        if (showingExport) {
+            ExportImportDialog(
+                show = true,
+                mode = "export",
+                json = exportJson,
+                onDismiss = { showingExport = false }
+            )
+        }
+        // Import dialog
+        if (!showingExport && importText.isNotEmpty()) {
+            ExportImportDialog(
+                show = true,
+                mode = "import",
+                json = importText,
+                result = importResult,
+                onDismiss = { importText = ""; importResult = null },
+                onApply = { text ->
+                    val imported = WidgetSettingsStore.importFromJson(text)
+                    settings = imported
+                    WidgetSettingsStore.save(context, widgetKey, imported)
+                    CoroutineScope(Dispatchers.IO).launch {
+                        runCatching { WishwellWidgetUpdater.updateAll(context) }
+                    }
+                    importResult = "Imported"
+                    importText = ""
+                }
+            )
         }
     }
 }
@@ -465,5 +641,245 @@ private fun ToggleOption(
             style = MaterialTheme.typography.bodyMedium,
             color = if (checked) accentColor else colors.onSurface
         )
+    }
+}
+
+/**
+ * Mini live preview of the widget with current settings applied.
+ */
+@Composable
+private fun WidgetPreview(
+    context: Context,
+    settings: WidgetSettingsStore.WidgetSettings,
+    accent: Color,
+    colors: androidx.compose.material3.ColorScheme,
+    extra: com.wishwell.app.ui.theme.WishExtraColors
+) {
+    val previewEntries = listOf(
+        WidgetEntry(1, "Wireless Headphones", "TechStore", "$99.99", "NEW", false),
+        WidgetEntry(2, "Coffee Maker", "Kitchen Co.", "$45.00", "-20%", true),
+        WidgetEntry(3, "Running Shoes", "SportZone", "$120.00", null, false)
+    )
+
+    Surface(
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+        color = accent.copy(alpha = 0.10f),
+        border = BorderStroke(1.dp, extra.hairline),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            // Widget preview frame
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = if (settings.blur) Color.LightGray else Color.White,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(200.dp)
+                    .padding(12.dp)
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Wishlisted items",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            color = colors.onSurface,
+                            fontSize = (16.sp * settings.fontSize.coerceIn(0.75f, 1.5f)),
+                            fontWeight = FontWeight.Bold
+                        ),
+                        maxLines = 1
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "${previewEntries.size} saved",
+                        style = MaterialTheme.typography.bodySmall.copy(color = extra.muted),
+                        maxLines = 1
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    previewEntries.take(when (settings.widgetSize) {
+                        "small" -> 2
+                        "large" -> 12
+                        else -> 3
+                    }).forEachIndexed { index, entry ->
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = accent.copy(alpha = 0.08f),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = entry.title.take(28),
+                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                        color = colors.onSurface,
+                                        fontSize = (14f * settings.fontSize.coerceIn(0.75f, 1.5f)).sp,
+                                        fontWeight = FontWeight.Medium
+                                    ),
+                                    maxLines = 1
+                                )
+                                if (settings.showStore) {
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = entry.storeName,
+                                        style = MaterialTheme.typography.bodySmall.copy(color = extra.muted),
+                                        maxLines = 1
+                                    )
+                                }
+                                if (settings.showPrice) {
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = entry.priceText,
+                                        style = MaterialTheme.typography.bodySmall.copy(color = extra.muted),
+                                        maxLines = 1
+                                    )
+                                }
+                                entry.badge?.let { badge ->
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = accent,
+                                        modifier = Modifier
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text(
+                                            text = badge,
+                                            style = MaterialTheme.typography.bodySmall.copy(
+                                                color = Color.White,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        if (index < 2) Spacer(modifier = Modifier.height(8.dp))
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "Preview shows how your widget will look on the home screen.",
+                style = MaterialTheme.typography.bodySmall,
+                color = extra.muted
+            )
+        }
+    }
+}
+
+/**
+ * Simple dialog for export/import of widget settings JSON.
+ */
+@Composable
+private fun ExportImportDialog(
+    show: Boolean,
+    mode: String,
+    json: String,
+    result: String? = null,
+    onDismiss: () -> Unit,
+    onApply: (String) -> Unit = {}
+) {
+    if (!show) return
+    val context = LocalContext.current
+    val colors = MaterialTheme.colorScheme
+    val extra = LocalWishExtraColors.current
+    var editText by remember { mutableStateOf(json) }
+
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        // Dim background
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0x80000000))
+                .clickable(onClick = onDismiss)
+        ) { }
+
+        Surface(
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
+            color = colors.surface,
+            modifier = Modifier
+                .padding(32.dp)
+                .width(300.dp)
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text(
+                    text = if (mode == "export") "Export settings" else "Import settings",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = colors.onSurface
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                if (mode == "export") {
+                    Text(
+                        text = "Copy this JSON and paste it into another widget's import:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = extra.muted
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFFF5F5F5))
+                            .padding(12.dp)
+                    ) {
+                        Text(
+                            text = json,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.onSurface
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(onClick = onDismiss) {
+                            Text(text = "Done", style = MaterialTheme.typography.labelLarge, color = colors.primary)
+                        }
+                    }
+                } else {
+                    Text(
+                        text = "Paste widget settings JSON here:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = extra.muted
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(100.dp)
+                            .background(Color(0xFFF5F5F5))
+                            .padding(12.dp)
+                    ) {
+                        Text(
+                            text = editText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.onSurface
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    if (result != null) {
+                        Text(
+                            text = result,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF2E7D32)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(onClick = onDismiss) {
+                            Text(text = "Cancel", style = MaterialTheme.typography.labelLarge, color = extra.muted)
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        TextButton(onClick = { onApply(editText) }) {
+                            Text(text = "Apply", style = MaterialTheme.typography.labelLarge, color = colors.primary)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
