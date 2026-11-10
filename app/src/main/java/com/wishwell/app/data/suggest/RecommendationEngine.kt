@@ -36,6 +36,41 @@ class RecommendationEngine(private val stores: StoreRegistry) {
         "official", "store", "global", "version", "free", "shipping", "sale", "offer"
     )
 
+    private val categoryKeywords = mapOf(
+        "tech" to setOf("phone", "laptop", "tablet", "headphone", "earbud", "camera", "tv", "monitor",
+            "charger", "cable", "gaming", "console", "speaker", "smartwatch", "computer", "macbook",
+            "ipad", "pixel", "galaxy", "iphone", "sony", "dell", "hp", "lenovo", "battery", "power bank",
+            "sd card", "usb", "adapter", "mouse", "keyboard", "webcam"),
+        "beauty" to setOf("cream", "serum", "lotion", "makeup", "lipstick", "sunscreen", "moisturizer",
+            "cleanser", "cosmetic", "skincare", "foundation", "mascara", "eyeliner", "nail", "perfume",
+            "fragrance", "shampoo", "conditioner", "soap", "deodorant", "toner", "mask"),
+        "fashion" to setOf("shirt", "dress", "shoe", "shoes", "jeans", "jacket", "t-shirt", "sneakers", "bag",
+            "watch", "jewelry", "necklace", "ring", "bracelet", "earring", "suit", "blazer", "skirt",
+            "shorts", "hat", "cap", "scarf", "belt", "wallet", "purse", "backpack"),
+        "home" to setOf("blender", "pot", "pan", "pillow", "lamp", "curtain", "towel", "mattress",
+            "furniture", "chair", "table", "bed", "sofa", "rug", "vase", "candle", "mirror", "clock",
+            "storage", "organizer", "cleaner", "vacuum", "iron", "cookware"),
+        "sports" to setOf("ball", "racket", "dumbbell", "treadmill", "bicycle", "helmet", "jersey",
+            "sport", "fitness", "gym", "yoga", "running", "hiking", "camping", "fishing", "golf"),
+        "books" to setOf("book", "novel", "textbook", "magazine", "notebook", "journal", "diary",
+            "comic", "manga", "manual"),
+        "auto" to setOf("tire", "oil filter", "battery", "car", "auto", "motor oil", "brake", "spark plug",
+            "headlight", "wiper", "car accessory"),
+        "grocery" to setOf("rice", "oil", "snack", "beverage", "cereal", "milk", "spice", "flour",
+            "sugar", "salt", "pasta", "noodle", "coffee", "tea", "juice", "food")
+    )
+
+    private val storeTypeTerms = mapOf(
+        "tech" to listOf("gadget shop", "electronics store", "computer store"),
+        "beauty" to listOf("pharmacy", "beauty store", "cosmetics shop", "drugstore"),
+        "fashion" to listOf("clothing store", "fashion boutique", "department store"),
+        "home" to listOf("home goods store", "kitchen store", "department store"),
+        "sports" to listOf("sporting goods store", "fitness store"),
+        "books" to listOf("bookstore", "stationery shop"),
+        "auto" to listOf("auto parts store", "car shop"),
+        "grocery" to listOf("supermarket", "grocery store", "convenience store")
+    )
+
     private val audioTypeTerms = setOf(
         "iem", "iems", "earphone", "earphones", "earbud", "earbuds", "in-ear", "inear",
         "headphone", "headphones", "headset", "tws", "earpiece", "audiophile", "hi-res", "hires"
@@ -124,6 +159,15 @@ class RecommendationEngine(private val stores: StoreRegistry) {
         val ordered = orderedTokens(item.title)
         val audioIntent = isAudioIntent(item, ordered)
 
+        // Detect product category for store-type aware Google Shopping search
+        val category = detectProductCategory(item)
+        val textLower = item.title.lowercase(Locale.ROOT)
+
+        // Shoes-only shortcut: if searching for shoes, keep it to a single keyword
+        if (category == "fashion" && textLower.contains("shoe") || textLower.contains("sneaker")) {
+            return "shoes"
+        }
+
         val parts = linkedSetOf<String>()
         if (brand != null) parts += brand
 
@@ -144,6 +188,19 @@ class RecommendationEngine(private val stores: StoreRegistry) {
             }
         }
 
+        // append store-type terms for Google Shopping to find any relevant retailer type
+        if (category != null && parts.size < 7) {
+            val terms = storeTypeTermsFor(category)
+            terms.forEach { term ->
+                if (parts.size >= 7) return@forEach
+                val termTokens = term.split(" ")
+                termTokens.forEach { t ->
+                    if (parts.size >= 7) return@forEach
+                    if (!parts.contains(t)) parts += t
+                }
+            }
+        }
+
         // for audio gear, ensure a clear type anchor if missing (helps avoid laptop/keyboard results)
         if (audioIntent && parts.none { it in audioTypeTerms || it == "iem" || it == "earphones" || it == "earbuds" }) {
             val anchor = when {
@@ -156,6 +213,32 @@ class RecommendationEngine(private val stores: StoreRegistry) {
 
         val q = parts.joinToString(" ").trim()
         return q.ifBlank { item.title.replace(Regex("\\s+"), " ").trim().take(80) }
+    }
+
+    private fun detectProductCategory(item: WishItem): String? {
+        val text = (item.title + " " + (item.description ?: "")).lowercase(Locale.ROOT)
+        val brand = (item.brand ?: "").lowercase(Locale.ROOT)
+
+        var bestCategory: String? = null
+        var bestScore = 0
+
+        categoryKeywords.forEach { (category, keywords) ->
+            var score = 0
+            keywords.forEach { keyword ->
+                if (text.contains(keyword)) score += 1
+                if (brand.contains(keyword)) score += 1
+            }
+            if (score > bestScore) {
+                bestScore = score
+                bestCategory = category
+            }
+        }
+
+        return bestCategory
+    }
+
+    private fun storeTypeTermsFor(category: String): List<String> {
+        return storeTypeTerms[category] ?: emptyList()
     }
 
     fun isAudioIntent(item: WishItem, ordered: List<String> = orderedTokens(item.title)): Boolean {
