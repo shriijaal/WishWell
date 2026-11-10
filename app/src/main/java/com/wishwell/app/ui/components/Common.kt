@@ -535,6 +535,30 @@ fun WishCard(
                             }
                         }
                     }
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(4.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isPurchased) Icons.Rounded.Done else Icons.Rounded.ShoppingBag,
+                                contentDescription = if (isPurchased) "Owned" else "Planned to buy",
+                                tint = if (isPurchased) colors.primary else extra.muted,
+                                modifier = Modifier.size(16.dp)
+                                    .background(colors.surface, CircleShape)
+                            )
+                            Text(
+                                text = if (isPurchased) "Owned" else "Planned to buy",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                                color = if (isPurchased) colors.primary else extra.muted,
+                                maxLines = 1
+                            )
+                        }
+                    }
                 }
                 if (!selectionMode && onTogglePurchased != null) {
                     Box(
@@ -550,28 +574,6 @@ fun WishCard(
                                 contentDescription = if (isPurchased) "Mark not bought" else "Mark bought",
                                 tint = if (isPurchased) colors.primary else extra.muted,
                                 modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-                }
-                if (isPurchased) {
-                    Box(modifier = Modifier.padding(top = 4.dp, end = 4.dp)) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Icon(
-                                Icons.Rounded.Done,
-                                contentDescription = "Bought",
-                                tint = colors.primary,
-                                modifier = Modifier.size(16.dp)
-                                    .background(colors.surface, CircleShape)
-                            )
-                            Text(
-                                text = "Bought",
-                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
-                                color = colors.primary,
-                                maxLines = 1
                             )
                         }
                     }
@@ -593,15 +595,13 @@ fun WishCard(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f)
                         )
-                        if (isPurchased) {
-                            Spacer(Modifier.width(4.dp))
-                            Icon(
-                                Icons.Rounded.Done,
-                                contentDescription = "Bought",
-                                tint = colors.primary,
-                                modifier = Modifier.size(14.dp)
-                            )
-                        }
+                        Spacer(Modifier.width(4.dp))
+                        Icon(
+                            imageVector = if (isPurchased) Icons.Rounded.Done else Icons.Rounded.ShoppingBag,
+                            contentDescription = if (isPurchased) "Owned" else "Planned to buy",
+                            tint = if (isPurchased) colors.primary else extra.muted,
+                            modifier = Modifier.size(14.dp)
+                        )
                         val badge = when {
                             item.isAtLowest -> "Low" to BadgeTone.LOW
                             belowTarget -> "Target" to BadgeTone.GOOD

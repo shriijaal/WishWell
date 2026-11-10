@@ -75,7 +75,8 @@ private data class Filters(
     val categoryIds: Set<Long>,
     val stores: Set<String>,
     val sort: SortMode,
-    val attentionFilter: AttentionFilter
+    val attentionFilter: AttentionFilter,
+    val showPurchased: Boolean
 )
 
 class WishlistViewModel(private val container: AppContainer) : ViewModel() {
@@ -93,8 +94,11 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
     private val message = MutableStateFlow<String?>(null)
     private val selectedIds = MutableStateFlow<Set<Long>>(emptySet())
 
-    private val filters = combine(query, categoryFilters, storeFilters, sort, attentionFilter) { q, c, st, s, a ->
-        Filters(q, c, st, s, a)
+    private val filtersBase = combine(query, categoryFilters, storeFilters, sort, attentionFilter) { q, c, st, s, a ->
+        Filters(q, c, st, s, a, false)
+    }
+    private val filters = filtersBase.combine(showPurchased) { base, sp ->
+        base.copy(showPurchased = sp)
     }
     private val status = combine(refreshing, message, prefs.readNotificationKeys) { r, m, read -> Triple(r, m, read) }
 
@@ -134,7 +138,10 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
 
             val matchesStore = f.stores.isEmpty() || item.item.storeName in f.stores
 
-            val matchesPurchased = item.item.isPurchased.not()
+            val matchesPurchased = when {
+                f.showPurchased -> true
+                else -> !item.item.isPurchased
+            }
 
             val matchesAttention = when (f.attentionFilter) {
                 AttentionFilter.ALL -> true
@@ -166,7 +173,7 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
             selectedStores = f.stores,
             sort = f.sort,
             attentionFilter = f.attentionFilter,
-            showPurchased = false,
+            showPurchased = f.showPurchased,
             tagMap = tagMap,
             refreshing = s.first,
             message = s.second,
