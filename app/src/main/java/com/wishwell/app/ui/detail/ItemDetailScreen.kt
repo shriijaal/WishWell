@@ -371,7 +371,10 @@ private fun ItemDetailContent(
                 Text(
                     text = item.storeName.uppercase(),
                     style = MaterialTheme.typography.labelSmall,
-                    color = extra.muted
+                    color = extra.muted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
                 )
                 if (detail.categoryName != null) {
                     Spacer(Modifier.width(10.dp))
