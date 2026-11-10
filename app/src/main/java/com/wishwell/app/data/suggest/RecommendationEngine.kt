@@ -135,6 +135,15 @@ class RecommendationEngine(private val stores: StoreRegistry) {
             parts += word
         }
 
+        // add meaningful description keywords to broaden cross-store matching
+        if (parts.size < 7 && item.description.isNotBlank()) {
+            tokens(item.description).forEach { word ->
+                if (parts.size >= 7) return@forEach
+                if (parts.contains(word)) return@forEach
+                parts += word
+            }
+        }
+
         // for audio gear, ensure a clear type anchor if missing (helps avoid laptop/keyboard results)
         if (audioIntent && parts.none { it in audioTypeTerms || it == "iem" || it == "earphones" || it == "earbuds" }) {
             val anchor = when {
