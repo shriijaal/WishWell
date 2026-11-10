@@ -388,17 +388,26 @@ private fun ItemDetailContent(
                     }
                 }
                 Spacer(Modifier.width(8.dp))
-                IconButton(
-                    onClick = {
-                        val currently = item?.isPurchased == true
-                        onTogglePurchased(!currently)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = {
+                            val currently = item?.isPurchased == true
+                            onTogglePurchased(!currently)
+                        }
+                    ) {
+                        Icon(
+                            imageVector = if (item?.isPurchased == true) Icons.Rounded.Done else Icons.Rounded.ShoppingBag,
+                            contentDescription = if (item?.isPurchased == true) "Mark not bought" else "Mark bought",
+                            tint = if (item?.isPurchased == true) colors.primary else extra.muted,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
-                ) {
-                    Icon(
-                        imageVector = if (item?.isPurchased == true) Icons.Rounded.Done else Icons.Rounded.ShoppingBag,
-                        contentDescription = if (item?.isPurchased == true) "Mark not bought" else "Mark bought",
-                        tint = if (item?.isPurchased == true) colors.primary else extra.muted,
-                        modifier = Modifier.size(20.dp)
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = if (item?.isPurchased == true) "Bought" else "Not owned",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                        color = if (item?.isPurchased == true) colors.primary else extra.muted,
+                        maxLines = 1
                     )
                 }
             }
