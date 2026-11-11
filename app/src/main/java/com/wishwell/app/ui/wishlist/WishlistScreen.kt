@@ -48,6 +48,7 @@ import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.LocalOffer
+import androidx.compose.material.icons.rounded.Savings
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.ShoppingBag
 import androidx.compose.material.icons.rounded.Storefront
@@ -1295,15 +1296,26 @@ private fun DashboardValueCard(summary: WishlistSummary) {
                         color = colors.primary.copy(alpha = if (extra.isDark) 0.22f else 0.14f),
                         border = BorderStroke(1.dp, colors.primary.copy(alpha = if (extra.isDark) 0.30f else 0.18f))
                     ) {
-                        RollingPriceText(
-                            text = "${formatMoney(savings, summary.currencyCode)} saved",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (extra.isDark) colors.primary else colors.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                            surface = "wishlist"
-                        )
+                        Row(
+                            modifier = Modifier.padding(start = 8.dp, end = 10.dp, top = 5.dp, bottom = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Savings,
+                                contentDescription = null,
+                                tint = if (extra.isDark) colors.primary else colors.onSurface,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            RollingPriceText(
+                                text = "Saved ${formatMoney(savings, summary.currencyCode)}",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (extra.isDark) colors.primary else colors.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                surface = "wishlist"
+                            )
+                        }
                     }
                 }
                 Spacer(Modifier.weight(1f))
