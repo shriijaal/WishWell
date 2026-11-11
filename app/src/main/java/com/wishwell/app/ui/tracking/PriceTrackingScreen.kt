@@ -257,6 +257,7 @@ fun PriceTrackingScreen(
                             swipeEnabled = !state.selectionMode,
                             isRevealed = revealedItemId == id,
                             onRevealedChange = { open -> revealedItemId = if (open) id else if (revealedItemId == id) null else revealedItemId },
+                            surface = "tracking",
                             modifier = Modifier.padding(horizontal = 20.dp, vertical = 5.dp)
                         )
                     }
@@ -292,6 +293,7 @@ fun PriceTrackingScreen(
                             swipeEnabled = !state.selectionMode,
                             isRevealed = revealedItemId == id,
                             onRevealedChange = { open -> revealedItemId = if (open) id else if (revealedItemId == id) null else revealedItemId },
+                            surface = "tracking",
                             modifier = Modifier.padding(horizontal = 20.dp, vertical = 5.dp)
                         )
                     }
@@ -327,6 +329,7 @@ fun PriceTrackingScreen(
                             swipeEnabled = !state.selectionMode,
                             isRevealed = revealedItemId == id,
                             onRevealedChange = { open -> revealedItemId = if (open) id else if (revealedItemId == id) null else revealedItemId },
+                            surface = "tracking",
                             modifier = Modifier.padding(horizontal = 20.dp, vertical = 5.dp)
                         )
                     }
@@ -370,6 +373,7 @@ fun PriceTrackingScreen(
                             swipeEnabled = !state.selectionMode,
                             isRevealed = revealedItemId == id,
                             onRevealedChange = { open -> revealedItemId = if (open) id else if (revealedItemId == id) null else revealedItemId },
+                            surface = "tracking",
                             modifier = Modifier.padding(horizontal = 20.dp, vertical = 5.dp)
                         )
                     }

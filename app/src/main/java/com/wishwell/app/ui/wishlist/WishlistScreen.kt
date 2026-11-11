@@ -627,6 +627,7 @@ fun WishlistScreen(
                                 isRevealed = revealedItemId == id,
                                 onRevealedChange = { open -> revealedItemId = if (open) id else if (revealedItemId == id) null else revealedItemId },
                                 onTogglePurchased = { vm.togglePurchased(id, !item.item.isPurchased) },
+                                surface = "wishlist",
                                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 5.dp)
                             )
                         }
@@ -679,6 +680,7 @@ fun WishlistScreen(
                             swipeEnabled = !state.selectionMode,
                             isRevealed = revealedItemId == id,
                             onRevealedChange = { open -> revealedItemId = if (open) id else if (revealedItemId == id) null else revealedItemId },
+                            surface = "wishlist",
                             modifier = Modifier.padding(horizontal = 20.dp, vertical = 5.dp)
                         )
                     }
@@ -720,6 +722,7 @@ fun WishlistScreen(
                             swipeEnabled = !state.selectionMode,
                             isRevealed = revealedItemId == id,
                             onRevealedChange = { open -> revealedItemId = if (open) id else if (revealedItemId == id) null else revealedItemId },
+                            surface = "wishlist",
                             modifier = Modifier.padding(horizontal = 20.dp, vertical = 5.dp)
                         )
                     }
@@ -747,6 +750,7 @@ fun WishlistScreen(
                             swipeEnabled = !state.selectionMode,
                             isRevealed = revealedItemId == id,
                             onRevealedChange = { open -> revealedItemId = if (open) id else if (revealedItemId == id) null else revealedItemId },
+                            surface = "wishlist",
                             modifier = Modifier.padding(horizontal = 20.dp, vertical = 5.dp)
                         )
                     }
@@ -1277,7 +1281,8 @@ private fun DashboardValueCard(summary: WishlistSummary) {
                 style = MaterialTheme.typography.displayMedium,
                 color = ink,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                surface = "wishlist"
             )
             Spacer(Modifier.height(10.dp))
             Row(
@@ -1296,7 +1301,8 @@ private fun DashboardValueCard(summary: WishlistSummary) {
                             color = if (extra.isDark) colors.primary else colors.onSurface,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            surface = "wishlist"
                         )
                     }
                 }
@@ -1856,7 +1862,8 @@ private fun WishlistGridCard(
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                 color = colors.onSurface,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                surface = "wishlist"
             )
             if (listPrice != null && price != null && listPrice > price + 0.01) {
                 RollingPriceText(
@@ -1865,7 +1872,8 @@ private fun WishlistGridCard(
                     color = extra.muted,
                     textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    surface = "wishlist"
                 )
             }
         }

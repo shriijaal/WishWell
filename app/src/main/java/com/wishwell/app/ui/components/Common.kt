@@ -70,15 +70,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.random.Random
 import kotlin.math.roundToInt
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -485,7 +484,8 @@ fun WishCard(
     selected: Boolean = false,
     selectionMode: Boolean = false,
     onLongClick: (() -> Unit)? = null,
-    onTogglePurchased: (() -> Unit)? = null
+    onTogglePurchased: (() -> Unit)? = null,
+    surface: String = "app"
 ) {
     val colors = MaterialTheme.colorScheme
     val extra = LocalWishExtraColors.current
@@ -606,7 +606,8 @@ fun WishCard(
                             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
                             color = colors.onSurface,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
+                            surface = surface
                         )
                         if (listPrice != null && price != null && listPrice > price + 0.01) {
                             Spacer(Modifier.width(6.dp))
@@ -616,7 +617,8 @@ fun WishCard(
                                 color = extra.muted,
                                 textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough,
                                 maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                                overflow = TextOverflow.Ellipsis,
+                                surface = surface
                             )
                         }
                     }
@@ -653,7 +655,8 @@ fun SwipeableWishCard(
     swipeEnabled: Boolean = true,
     isRevealed: Boolean = false,
     onRevealedChange: (Boolean) -> Unit = {},
-    onTogglePurchased: (() -> Unit)? = null
+    onTogglePurchased: (() -> Unit)? = null,
+    surface: String = "app"
 ) {
     val colors = MaterialTheme.colorScheme
     val extra = LocalWishExtraColors.current
@@ -764,6 +767,7 @@ fun SwipeableWishCard(
             selectionMode = selectionMode,
             onLongClick = onLongClick,
             onTogglePurchased = onTogglePurchased,
+            surface = surface,
             modifier = Modifier
                 .fillMaxWidth()
                 .offset { IntOffset(offsetX.value.roundToInt(), 0) }
@@ -777,13 +781,14 @@ fun SwipeableWishCard(
     }
 }
 
-private object LaunchRollSession {
-    val startMs: Long = android.os.SystemClock.elapsedRealtime()
-    val rolled = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
-    fun canRoll(key: String): Boolean {
-        if (android.os.SystemClock.elapsedRealtime() - startMs > 6000L) return false
-        return rolled.add(key)
-    }
+/**
+ * Remembers which values have already played their roll, per surface, for this process.
+ * Scoping by surface means the wishlist and the tracking tab each get their own entrance
+ * instead of the first screen to render a value claiming it forever.
+ */
+private object RollSession {
+    private val rolled = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    fun canRoll(key: String): Boolean = rolled.add(key)
 }
 
 private fun shouldRouletteRoll(text: String): Boolean {
@@ -792,8 +797,40 @@ private fun shouldRouletteRoll(text: String): Boolean {
         text.contains('$') || text.contains('€') || text.contains('£')
 }
 
-private fun scrambleDigits(text: String): String = buildString(text.length) {
-    for (c in text) append(if (c.isDigit()) ('0' + Random.nextInt(10)) else c)
+private const val ROLL_DURATION_MS = 620f
+private const val ROLL_DIGIT_TICK_MS = 40f
+
+/**
+ * Builds one animation frame. Digits settle left to right as [progress] advances; while a digit
+ * is still spinning it walks through consecutive values, which reads as a reel instead of noise.
+ */
+private fun rollFrame(text: String, progress: Float, elapsedMs: Float): String {
+    val digitCount = text.count { it.isDigit() }
+    if (digitCount == 0) return text
+    val out = StringBuilder(text.length)
+    var digitIndex = 0
+    for (c in text) {
+        if (!c.isDigit()) {
+            out.append(c)
+            continue
+        }
+        val lockAt = if (digitCount == 1) {
+            0.92f
+        } else {
+            0.30f + 0.65f * (digitIndex.toFloat() / (digitCount - 1))
+        }
+        if (progress >= lockAt) {
+            out.append(c)
+        } else {
+            // Offset each digit's tick so they change on different frames — the number reads as a
+            // continuously spinning reel instead of all columns flicking in unison.
+            val tick = ((elapsedMs + digitIndex * 17f) / ROLL_DIGIT_TICK_MS).toInt()
+            val phase = digitIndex * 3 + (text.hashCode() and 7)
+            out.append('0' + ((c - '0' + tick + phase) % 10))
+        }
+        digitIndex++
+    }
+    return out.toString()
 }
 
 @Composable
@@ -805,14 +842,23 @@ fun RollingPriceText(
     maxLines: Int = Int.MAX_VALUE,
     overflow: TextOverflow = TextOverflow.Clip,
     textAlign: TextAlign? = null,
-    textDecoration: androidx.compose.ui.text.style.TextDecoration? = null
+    textDecoration: androidx.compose.ui.text.style.TextDecoration? = null,
+    surface: String = "app"
 ) {
-    val roll = shouldRouletteRoll(text)
-    if (!roll) {
+    // Tabular figures keep every digit the same width, so the number never jitters mid-roll.
+    val rolledStyle = remember(style) {
+        if (style.fontFeatureSettings == null) style.copy(fontFeatureSettings = "tnum") else style
+    }
+
+    val rollable = shouldRouletteRoll(text) && android.animation.ValueAnimator.areAnimatorsEnabled()
+    val rollKey = "$surface\u0000$text"
+    val animateNow = remember(rollKey) { rollable && RollSession.canRoll(rollKey) }
+
+    if (!animateNow) {
         Text(
             text = text,
             modifier = modifier,
-            style = style,
+            style = rolledStyle,
             color = color,
             maxLines = maxLines,
             overflow = overflow,
@@ -822,22 +868,23 @@ fun RollingPriceText(
         return
     }
 
-    val rollKey = text
-    val animateNow = remember(rollKey) { LaunchRollSession.canRoll(rollKey) }
-    var displayed by remember(rollKey) { mutableStateOf(if (animateNow) scrambleDigits(text) else text) }
+    var displayed by remember(rollKey) { mutableStateOf(rollFrame(text, 0f, 0f)) }
     LaunchedEffect(rollKey) {
-        if (animateNow) {
-            repeat(8) { i ->
-                displayed = scrambleDigits(text)
-                delay((28L + i * 12L))
-            }
+        // A small per-string offset stops a grid of cards from spinning in perfect lockstep.
+        val staggerMs = (rollKey.hashCode().toLong().absoluteValue % 90L)
+        val startNanos = withFrameNanos { it } + staggerMs * 1_000_000L
+        while (true) {
+            val frameNanos = withFrameNanos { it }
+            val elapsedMs = ((frameNanos - startNanos) / 1_000_000f).coerceAtLeast(0f)
+            val progress = (elapsedMs / ROLL_DURATION_MS).coerceIn(0f, 1f)
+            displayed = if (progress >= 1f) text else rollFrame(text, progress, elapsedMs)
+            if (progress >= 1f) break
         }
-        displayed = text
     }
     Text(
         text = displayed,
         modifier = modifier,
-        style = style,
+        style = rolledStyle,
         color = color,
         maxLines = maxLines,
         overflow = overflow,

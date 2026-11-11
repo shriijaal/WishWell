@@ -456,7 +456,8 @@ private fun ItemDetailContent(
                     style = MaterialTheme.typography.displayLarge,
                     color = colors.onBackground,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    surface = "detail"
                 )
                 if (detail.discountPercent != null) {
                     Spacer(Modifier.width(10.dp))
@@ -488,7 +489,8 @@ private fun ItemDetailContent(
                             color = extra.muted,
                             textDecoration = TextDecoration.LineThrough,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
+                            surface = "detail"
                         )
                         Spacer(Modifier.width(10.dp))
                     }
@@ -497,7 +499,8 @@ private fun ItemDetailContent(
                         style = MaterialTheme.typography.bodySmall,
                         color = extra.muted,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        surface = "detail"
                     )
                 }
                 if (item.inStock != null) {
