@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -11,10 +12,15 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -38,7 +44,6 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Bookmarks
 import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -57,6 +62,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
@@ -67,6 +74,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -182,21 +190,18 @@ fun WishwellRoot(
             }
         },
         floatingActionButton = {
-            if (currentRoute == "wishlist" && !wishlistSelectionMode) {
-                ExtendedFloatingActionButton(
-                    onClick = { navController.navigate("add") },
-                    containerColor = colors.primary,
-                    contentColor = colors.onPrimary,
-                    shape = CircleShape,
-                    icon = {
-                        Icon(
-                            Icons.Rounded.Add,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    },
-                    text = { Text("Save a want") }
+            AnimatedVisibility(
+                visible = currentRoute == "wishlist" && !wishlistSelectionMode,
+                enter = fadeIn(tween(180)) + scaleIn(
+                    initialScale = 0.86f,
+                    animationSpec = spring(dampingRatio = 0.58f, stiffness = 360f)
+                ),
+                exit = fadeOut(tween(120)) + scaleOut(
+                    targetScale = 0.9f,
+                    animationSpec = tween(120)
                 )
+            ) {
+                GlassSaveButton(onClick = { navController.navigate("add") })
             }
         }
     ) { innerPadding ->
@@ -537,6 +542,157 @@ private fun WishBottomBar(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Liquid-glass "Save a want" pill: translucent tinted glass over the page, a soft accent halo,
+ * a crisp gradient rim, plus a press spring and a specular sweep so it feels physical.
+ */
+@Composable
+private fun GlassSaveButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val extra = LocalWishExtraColors.current
+    val colors = MaterialTheme.colorScheme
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.955f else 1f,
+        animationSpec = spring(dampingRatio = 0.5f, stiffness = 780f),
+        label = "saveWantPress"
+    )
+    val iconScale by animateFloatAsState(
+        targetValue = if (pressed) 1.2f else 1f,
+        animationSpec = spring(dampingRatio = 0.42f, stiffness = 900f),
+        label = "saveWantIcon"
+    )
+
+    // One specular sweep per press, like light sliding across the glass.
+    val sheen = remember { Animatable(1f) }
+    LaunchedEffect(pressed) {
+        if (pressed) {
+            sheen.snapTo(0f)
+            sheen.animateTo(1f, tween(520, easing = LinearEasing))
+        }
+    }
+
+    // Frosted enough to stay legible over bright product images, still see-through.
+    val glass = Brush.linearGradient(
+        0f to Color.White.copy(alpha = if (extra.isDark) 0.12f else 0.92f),
+        0.48f to colors.surface.copy(alpha = if (extra.isDark) 0.90f else 0.88f),
+        1f to colors.primary.copy(alpha = if (extra.isDark) 0.24f else 0.24f)
+    )
+    val rim = Brush.verticalGradient(
+        listOf(
+            Color.White.copy(alpha = if (extra.isDark) 0.45f else 0.98f),
+            extra.hairline.copy(alpha = 0.35f),
+            Color.White.copy(alpha = if (extra.isDark) 0.08f else 0.22f)
+        )
+    )
+    val topLight = Brush.verticalGradient(
+        0f to Color.White.copy(alpha = if (extra.isDark) 0.13f else 0.55f),
+        0.5f to Color.Transparent
+    )
+    // Darker towards the bottom edge gives the pane a sense of thickness.
+    val bottomShade = Brush.verticalGradient(
+        0.55f to Color.Transparent,
+        1f to Color.Black.copy(alpha = if (extra.isDark) 0.16f else 0.07f)
+    )
+
+    Box(
+        modifier = modifier
+            .shadow(
+                elevation = 18.dp,
+                shape = CircleShape,
+                ambientColor = Color.Black.copy(alpha = if (extra.isDark) 0.55f else 0.22f),
+                spotColor = colors.primary.copy(alpha = if (extra.isDark) 0.60f else 0.40f)
+            )
+            .scale(pressScale)
+            .drawBehind {
+                // Accent bloom behind the pane, like light caught in the glass.
+                val radius = size.maxDimension * 1.05f
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            colors.primary.copy(alpha = if (extra.isDark) 0.34f else 0.18f),
+                            Color.Transparent
+                        ),
+                        center = center,
+                        radius = radius
+                    ),
+                    radius = radius,
+                    center = center
+                )
+            }
+            .clip(CircleShape)
+            .background(glass)
+            .background(topLight)
+            .background(bottomShade)
+            .border(1.dp, rim, CircleShape)
+            .drawWithContent {
+                drawContent()
+                if (sheen.value < 1f) {
+                    val w = size.width
+                    val x = -w * 0.5f + sheen.value * w * 2f
+                    drawRect(
+                        Brush.linearGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                Color.White.copy(alpha = if (extra.isDark) 0.18f else 0.50f),
+                                Color.Transparent
+                            ),
+                            start = Offset(x, 0f),
+                            end = Offset(x + w * 0.55f, size.height)
+                        )
+                    )
+                }
+            }
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                role = Role.Button,
+                onClick = onClick
+            )
+            .padding(start = 7.dp, end = 20.dp, top = 7.dp, bottom = 7.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(9.dp)
+        ) {
+            // Filled accent disc so the affordance reads instantly against any backdrop.
+            Box(
+                modifier = Modifier
+                    .size(30.dp)
+                    .scale(iconScale)
+                    .clip(CircleShape)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                colors.primary,
+                                colors.primary.copy(alpha = 0.82f)
+                            )
+                        )
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Add,
+                    contentDescription = null,
+                    tint = colors.onPrimary,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            Text(
+                text = "Save a want",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = colors.onSurface
+            )
         }
     }
 }
