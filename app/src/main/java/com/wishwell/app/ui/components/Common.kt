@@ -402,8 +402,15 @@ fun ProductImageCarousel(
 fun PriceRangeMeter(item: ItemWithStats, modifier: Modifier = Modifier) {
     val extra = LocalWishExtraColors.current
     val low = item.lowest
-    val high = item.highest
-    val position = item.rangePosition
+    // Include the store's current list price as the "high" reference so a sale item still shows
+    // a meaningful range when its tracked history is otherwise flat.
+    val high = item.peak
+    val price = item.price
+    val position = if (low == null || high == null || high - low < 0.01 || price == null) {
+        null
+    } else {
+        ((price - low) / (high - low)).toFloat().coerceIn(0f, 1f)
+    }
 
     if (low == null || high == null || position == null) {
         Row(

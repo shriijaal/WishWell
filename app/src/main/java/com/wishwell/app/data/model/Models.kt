@@ -168,29 +168,49 @@ data class ItemWithStats(
             return list > p + 0.01
         }
 
-    /** How far below the observed peak the current price sits, in percent. */
+    /** How far below the current reference price the item sits, in percent. */
     val discountPercent: Int?
         get() {
             val p = price ?: return null
-            val top = peak ?: return null
+            // Prefer the store's current struck-through price (a real sale). Only fall back to the
+            // observed peak when the history actually moved, so flat/noisy readings never produce
+            // a phantom discount badge.
+            val list = item.listPrice?.takeIf { it > p + 0.01 }
+            val historyPeak = highest?.takeIf { hasPriceVariation && it > p + 0.01 }
+            val top = list ?: historyPeak ?: return null
             if (top <= 0.0 || p >= top) return null
             return (((top - p) / top) * 100).roundToInt().coerceIn(1, 99)
         }
 
     val hasHistory: Boolean get() = pointCount >= 3
 
+    /**
+     * True only when the recorded history contains an actual price movement. Repeated identical
+     * readings (a flat price that is merely re-checked over time) are not a low/high signal —
+     * otherwise every never-discounted item would sit permanently at its "all-time low".
+     */
+    val hasPriceVariation: Boolean
+        get() {
+            val low = lowest ?: return false
+            val high = highest ?: return false
+            val spread = high - low
+            if (spread <= 0.01) return false
+            // Ignore tiny scraping noise; require at least 0.5% of the peak.
+            return spread >= high * 0.005
+        }
+
     val isAtLowest: Boolean
         get() {
             val p = price ?: return false
             val low = lowest ?: return false
-            return hasHistory && p <= low + 0.005
+            return hasHistory && hasPriceVariation && p <= low + 0.005
         }
 
     val isAtHighest: Boolean
         get() {
             val p = price ?: return false
             val top = highest ?: return false
-            return hasHistory && p >= top - 0.005
+            return hasHistory && hasPriceVariation && p >= top - 0.005
         }
 
     /** 0f = at the all-time low, 1f = at the all-time high. */

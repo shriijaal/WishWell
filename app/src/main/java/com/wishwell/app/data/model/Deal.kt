@@ -15,20 +15,37 @@ fun assessDeal(item: ItemWithStats): DealAssessment {
     val highest = item.highest
     val lowest = item.lowest
 
-    if (price == null || !item.hasHistory || average == null || lowest == null || highest == null) {
-        return DealAssessment(
-            DealVerdict.UNKNOWN,
-            "Still learning this price",
-            "Keep checking back — a few more readings reveal whether this is a good deal."
-        )
-    }
+    val unknown = DealAssessment(
+        DealVerdict.UNKNOWN,
+        "Still learning this price",
+        "Keep checking back — a few more readings reveal whether this is a good deal."
+    )
 
-    if (price <= lowest + 0.01) {
+    if (price == null) return unknown
+
+    if (item.hasHistory && item.hasPriceVariation && lowest != null && price <= lowest + 0.01) {
         return DealAssessment(
             DealVerdict.ALL_TIME_LOW,
             "Lowest price we've seen",
             "This is the cheapest ${item.item.title.take(40)} has been since you started tracking."
         )
+    }
+
+    // The store's own struck-through price is a reliable sale signal even when our history is
+    // still flat (or was filtered down to the sale price).
+    val listPrice = item.item.listPrice
+    val salePercent = item.discountPercent
+    if (item.isOnSale && listPrice != null && salePercent != null && salePercent >= 5) {
+        return DealAssessment(
+            DealVerdict.GOOD,
+            "On sale right now",
+            "The store lists this at ${money(listPrice, item.item.currencyCode)} — you'd pay " +
+                "${money(price, item.item.currencyCode)} today, about $salePercent% less."
+        )
+    }
+
+    if (!item.hasHistory || average == null || lowest == null || highest == null) {
+        return unknown
     }
 
     val vsAverage = (price - average) / average

@@ -13,13 +13,24 @@ import com.wishwell.app.data.model.WishItem
 import kotlinx.coroutines.flow.Flow
 
 private const val ITEMS_WITH_STATS = """
+    WITH selling_points AS (
+        SELECT p.*
+        FROM price_points p
+        JOIN items i ON i.id = p.itemId
+        WHERE NOT (
+            i.currentPrice IS NOT NULL
+            AND i.listPrice IS NOT NULL
+            AND i.listPrice > i.currentPrice + 0.01
+            AND ABS(p.price - i.listPrice) < 0.01
+        )
+    )
     SELECT i.*,
-        (SELECT MIN(p.price) FROM price_points p WHERE p.itemId = i.id) AS lowest,
-        (SELECT MAX(p.price) FROM price_points p WHERE p.itemId = i.id) AS highest,
-        (SELECT AVG(p.price) FROM price_points p WHERE p.itemId = i.id) AS average,
-        (SELECT p.price FROM price_points p WHERE p.itemId = i.id ORDER BY p.recordedAt ASC LIMIT 1) AS firstPrice,
-        (SELECT p.price FROM price_points p WHERE p.itemId = i.id ORDER BY p.recordedAt DESC LIMIT 1) AS latestPrice,
-        (SELECT COUNT(*) FROM price_points p WHERE p.itemId = i.id) AS pointCount,
+        (SELECT MIN(p.price) FROM selling_points p WHERE p.itemId = i.id) AS lowest,
+        (SELECT MAX(p.price) FROM selling_points p WHERE p.itemId = i.id) AS highest,
+        (SELECT AVG(p.price) FROM selling_points p WHERE p.itemId = i.id) AS average,
+        (SELECT p.price FROM selling_points p WHERE p.itemId = i.id ORDER BY p.recordedAt ASC LIMIT 1) AS firstPrice,
+        (SELECT p.price FROM selling_points p WHERE p.itemId = i.id ORDER BY p.recordedAt DESC LIMIT 1) AS latestPrice,
+        (SELECT COUNT(*) FROM selling_points p WHERE p.itemId = i.id) AS pointCount,
         c.name AS categoryName,
         c.colorArgb AS categoryColor
     FROM items i
