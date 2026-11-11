@@ -582,10 +582,12 @@ private fun GlassSaveButton(
 
     // Frosted enough to stay legible over bright product images, still see-through.
     val glass = Brush.linearGradient(
-        0f to Color.White.copy(alpha = if (extra.isDark) 0.12f else 0.92f),
-        0.48f to colors.surface.copy(alpha = if (extra.isDark) 0.90f else 0.88f),
-        1f to colors.primary.copy(alpha = if (extra.isDark) 0.24f else 0.24f)
+        0f to Color.White.copy(alpha = if (extra.isDark) 0.14f else 0.94f),
+        0.48f to colors.surface.copy(alpha = if (extra.isDark) 0.95f else 0.93f),
+        1f to colors.primary.copy(alpha = if (extra.isDark) 0.26f else 0.22f)
     )
+    // A milky haze diffuses whatever sits behind the pane, the way real frosted glass does.
+    val frostHaze = Color.White.copy(alpha = if (extra.isDark) 0.05f else 0.12f)
     val rim = Brush.verticalGradient(
         listOf(
             Color.White.copy(alpha = if (extra.isDark) 0.45f else 0.98f),
@@ -630,6 +632,7 @@ private fun GlassSaveButton(
             }
             .clip(CircleShape)
             .background(glass)
+            .background(frostHaze)
             .background(topLight)
             .background(bottomShade)
             .border(1.dp, rim, CircleShape)
@@ -657,7 +660,7 @@ private fun GlassSaveButton(
                 role = Role.Button,
                 onClick = onClick
             )
-            .padding(start = 7.dp, end = 20.dp, top = 7.dp, bottom = 7.dp),
+            .padding(start = 10.dp, end = 22.dp, top = 12.dp, bottom = 12.dp),
         contentAlignment = Alignment.Center
     ) {
         Row(
@@ -667,7 +670,7 @@ private fun GlassSaveButton(
             // Filled accent disc so the affordance reads instantly against any backdrop.
             Box(
                 modifier = Modifier
-                    .size(30.dp)
+                    .size(32.dp)
                     .scale(iconScale)
                     .clip(CircleShape)
                     .background(
@@ -684,7 +687,7 @@ private fun GlassSaveButton(
                     imageVector = Icons.Rounded.Add,
                     contentDescription = null,
                     tint = colors.onPrimary,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(19.dp)
                 )
             }
             Text(
