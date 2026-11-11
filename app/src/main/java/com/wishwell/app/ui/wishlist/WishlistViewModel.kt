@@ -6,6 +6,7 @@ import com.wishwell.app.data.model.CategoryWithCount
 import com.wishwell.app.data.model.ItemWithStats
 import com.wishwell.app.di.AppContainer
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -61,6 +62,8 @@ data class WishlistUiState(
     val summary: WishlistSummary = WishlistSummary(0, "USD", 0.0, 0.0, 0, 0, 0, 0, false),
     val selectedIds: Set<Long> = emptySet(),
     val readNotificationKeys: Set<String> = emptySet(),
+    /** Layout of the wishlist list: "list", "grid", or "carousel". */
+    val viewMode: String = "list",
     /** itemId -> its category tags (from the junction table). */
     val tagMap: Map<Long, Set<Long>> = emptyMap()
 ) {
@@ -90,9 +93,16 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
     private val sort = MutableStateFlow(SortMode.RECENT)
     private val attentionFilter = MutableStateFlow(AttentionFilter.ALL)
     private val showPurchased = MutableStateFlow(false)
+    private val viewMode = MutableStateFlow<String>("list")
     private val refreshing = MutableStateFlow(false)
     private val message = MutableStateFlow<String?>(null)
     private val selectedIds = MutableStateFlow<Set<Long>>(emptySet())
+
+    init {
+        viewModelScope.launch {
+            prefs.wishlistViewMode.collect { viewMode.value = it }
+        }
+    }
 
     private val filtersBase = combine(query, categoryFilters, storeFilters, sort, attentionFilter) { q, c, st, s, a ->
         Filters(q, c, st, s, a, false)
@@ -101,7 +111,6 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
         base.copy(showPurchased = sp)
     }
     private val status = combine(refreshing, message, prefs.readNotificationKeys) { r, m, read -> Triple(r, m, read) }
-
     private val tagMap: StateFlow<Map<Long, Set<Long>>> =
         repo.observeItemTags().map { tags ->
             tags.groupBy { it.itemId }.mapValues { it.value.map { it.categoryId }.toSet() }
@@ -188,7 +197,17 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
         initialValue = WishlistUiState()
     )
 
-    val uiState: StateFlow<WishlistUiState> = uiStateBase.combine(showPurchased) { state, sp ->
+    /** uiStateBase with the persisted view mode folded in. */
+    private val uiStateWithLayoutFlow: Flow<WishlistUiState> =
+        uiStateBase.combine(viewMode) { state, vm -> state.copy(viewMode = vm) }
+
+    val uiStateWithLayout: StateFlow<WishlistUiState> = uiStateWithLayoutFlow.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = WishlistUiState()
+    )
+
+    val uiState: StateFlow<WishlistUiState> = uiStateWithLayout.combine(showPurchased) { state, sp ->
         state.copy(showPurchased = sp)
     }.stateIn(
         scope = viewModelScope,
@@ -227,6 +246,11 @@ class WishlistViewModel(private val container: AppContainer) : ViewModel() {
 
     fun setSort(mode: SortMode) {
         sort.value = mode
+    }
+
+    fun setViewMode(mode: String) {
+        viewMode.value = mode
+        viewModelScope.launch { prefs.setWishlistViewMode(mode) }
     }
 
     fun setAttentionFilter(filter: AttentionFilter) {

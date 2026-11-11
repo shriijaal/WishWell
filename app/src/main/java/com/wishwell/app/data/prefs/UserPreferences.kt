@@ -26,6 +26,7 @@ class UserPreferences(private val context: Context) {
         val LAST_REFRESH = longPreferencesKey("last_refresh")
         val NAVBAR_STYLE = stringPreferencesKey("navbar_style")
         val NAVBAR_GLASS_GLOW = booleanPreferencesKey("navbar_glass_glow")
+        val WISHLIST_VIEW_MODE = stringPreferencesKey("wishlist_view_mode")
         val ACCENT_COLOR = stringPreferencesKey("accent_color")
         val READ_NOTIFICATION_KEYS = stringSetPreferencesKey("read_notification_keys")
 
@@ -68,6 +69,14 @@ class UserPreferences(private val context: Context) {
 
     val navbarGlassGlow: Flow<Boolean> =
         context.dataStore.data.map { it[Keys.NAVBAR_GLASS_GLOW] ?: true }
+
+    /** Default wishlist layout: "list", "grid", or "carousel". */
+    val wishlistViewMode: Flow<String> =
+        context.dataStore.data.map { it[Keys.WISHLIST_VIEW_MODE] ?: "list" }
+
+    suspend fun setWishlistViewMode(mode: String) {
+        context.dataStore.edit { it[Keys.WISHLIST_VIEW_MODE] = mode }
+    }
 
     val accentColor: Flow<String> =
         context.dataStore.data.map { it[Keys.ACCENT_COLOR] ?: "green" }
