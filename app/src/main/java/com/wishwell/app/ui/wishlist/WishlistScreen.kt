@@ -261,10 +261,38 @@ fun WishlistScreen(
                         color = extra.muted,
                         modifier = Modifier.weight(1f)
                     )
-                    ViewModeSegmentedControl(
-                        viewMode = viewMode,
-                        onViewModeChange = { vm.setViewMode(it) }
-                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.ViewList,
+                            contentDescription = "List view",
+                            tint = if (viewMode == "list") MaterialTheme.colorScheme.primary else extra.muted,
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .clickable { vm.setViewMode("list") }
+                                .padding(4.dp)
+                        )
+                        Icon(
+                            imageVector = Icons.Rounded.GridView,
+                            contentDescription = "Grid view",
+                            tint = if (viewMode == "grid") MaterialTheme.colorScheme.primary else extra.muted,
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .clickable { vm.setViewMode("grid") }
+                                .padding(4.dp)
+                        )
+                        Icon(
+                            imageVector = Icons.Rounded.ViewCarousel,
+                            contentDescription = "Carousel view",
+                            tint = if (viewMode == "carousel") MaterialTheme.colorScheme.primary else extra.muted,
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .clickable { vm.setViewMode("carousel") }
+                                .padding(4.dp)
+                        )
+                    }
                 }
             }
         }
@@ -1865,108 +1893,4 @@ private fun WishlistGridCard(
         }
     }
 }
-
-/**
- * Segmented list / grid / carousel switcher that lives in the Wishlist header.
- * The active segment is filled; press feedback plays on unselected segments.
- * Persisted through the view model to DataStore.
- */
-@Composable
-private fun ViewModeSegmentedControl(
-    viewMode: String,
-    onViewModeChange: (String) -> Unit
-) {
-    val colors = MaterialTheme.colorScheme
-    val extra = LocalWishExtraColors.current
-
-    val modes = listOf(
-        "list" to Icons.AutoMirrored.Rounded.ViewList,
-        "grid" to Icons.Rounded.GridView,
-        "carousel" to Icons.Rounded.ViewCarousel
-    )
-
-    val segmentSize = 40.dp
-    val segmentGap = 6.dp
-    val density = LocalDensity.current
-
-    Row(
-        modifier = Modifier
-            .width(
-                with(density) {
-                    (3 * segmentSize.toPx() + 2 * segmentGap.toPx() + 16.dp.toPx()).dp
-                }
-            )
-            .height(40.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(
-                Brush.linearGradient(
-                    listOf(
-                        Color.White.copy(alpha = if (extra.isDark) 0.08f else 0.92f),
-                        colors.surface.copy(alpha = if (extra.isDark) 0.65f else 0.82f)
-                    )
-                )
-            )
-            .border(
-                1.dp,
-                extra.hairline.copy(alpha = if (extra.isDark) 0.30f else 0.45f),
-                RoundedCornerShape(12.dp)
-            ),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(segmentGap)
-    ) {
-        modes.forEachIndexed { index, (mode, icon) ->
-            val isSelected = viewMode == mode
-            val interaction = remember { MutableInteractionSource() }
-            val pressed by interaction.collectIsPressedAsState()
-
-            Box(
-                modifier = Modifier
-                    .size(segmentSize)
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable(
-                        interactionSource = interaction,
-                        indication = null,
-                        onClick = { onViewModeChange(mode) }
-                    )
-                    .drawBehind {
-                        // Active segment: filled pill behind the icon.
-                        if (isSelected) {
-                            drawRect(
-                                brush = Brush.verticalGradient(
-                                    listOf(
-                                        colors.primary.copy(alpha = if (extra.isDark) 0.90f else 0.98f),
-                                        colors.primary.copy(alpha = if (extra.isDark) 0.70f else 0.88f)
-                                    )
-                                ),
-                                size = size
-                            )
-                        }
-                        // Press feedback on unselected segments.
-                        if (pressed && !isSelected) {
-                            drawCircle(
-                                color = Color.White.copy(alpha = if (extra.isDark) 0.12f else 0.08f),
-                                center = center,
-                                radius = size.maxDimension / 2
-                            )
-                        }
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = if (isSelected) {
-                        colors.onPrimary
-                    } else if (pressed) {
-                        colors.primary
-                    } else {
-                        extra.muted
-                    },
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-        }
-    }
-}
-
 
