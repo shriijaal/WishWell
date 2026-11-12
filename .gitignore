@@ -10,6 +10,8 @@ captures/
 .cxx/
 *.apk
 *.aab
+*.jks
+*.keystore
 *.log
 hs_err_*.log
 replay_pid*.log
