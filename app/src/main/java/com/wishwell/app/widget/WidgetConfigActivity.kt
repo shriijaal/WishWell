@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -35,6 +36,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -50,6 +52,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.datastore.preferences.core.MutablePreferences
+import androidx.glance.appwidget.GlanceAppWidget
+import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.wishwell.app.WishwellApp
 import com.wishwell.app.ui.components.SettingsCard
@@ -62,9 +67,10 @@ import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 /**
- * Reconfiguration screen for the home-screen widget. Declared as the receiver's
+ * Reconfiguration screen for a home-screen widget. Declared as each receiver's
  * `android:configure` activity, so the launcher shows a settings entry next to Remove on
- * long-press. A live preview mirrors the widget as the options change.
+ * long-press. Options are saved to that widget's own Glance state, so every widget on the home
+ * screen can look different. A live preview mirrors the widget as the options change.
  */
 class WidgetConfigActivity : ComponentActivity() {
 
@@ -82,7 +88,15 @@ class WidgetConfigActivity : ComponentActivity() {
             setResult(RESULT_CANCELED, resultIntent)
         }
 
+        if (widgetId == AppWidgetManager.INVALID_APPWIDGET_ID) {
+            finish()
+            return
+        }
+
         val container = (application as WishwellApp).container
+        val isPriceDrops = isPriceDropsWidget(widgetId)
+        val widget: GlanceAppWidget = if (isPriceDrops) PriceDropsWidget() else WishlistedItemsWidget()
+        val glanceId = GlanceAppWidgetManager(applicationContext).getGlanceIdBy(widgetId)
 
         setContent {
             val accent by container.prefs.accentColor.collectAsStateWithLifecycle(initialValue = "green")
@@ -92,85 +106,100 @@ class WidgetConfigActivity : ComponentActivity() {
                 "dark" -> true
                 else -> isSystemInDarkTheme()
             }
-            val textSize by container.prefs.widgetTextSize.collectAsStateWithLifecycle(initialValue = "default")
-            val showImages by container.prefs.widgetShowImages.collectAsStateWithLifecycle(initialValue = true)
-            val opacity by container.prefs.widgetBackgroundOpacity.collectAsStateWithLifecycle(initialValue = 100)
-            val borderStyle by container.prefs.widgetBorderStyle.collectAsStateWithLifecycle(initialValue = "none")
-            val borderHex by container.prefs.widgetBorderColor.collectAsStateWithLifecycle(initialValue = "#1F3D2E")
-            val borderWidth by container.prefs.widgetBorderWidth.collectAsStateWithLifecycle(initialValue = 2)
-            val borderColor = resolveWidgetBorderColor(applicationContext, borderStyle, borderHex, accent)
             val scope = rememberCoroutineScope()
+            var config by remember { mutableStateOf<WidgetConfig?>(null) }
+
+            LaunchedEffect(glanceId) {
+                config = runCatching {
+                    readWidgetConfig(applicationContext, glanceId, widget)
+                }.getOrElse { legacyWidgetDefaults(applicationContext) }
+            }
 
             WishwellTheme(darkTheme = darkTheme, accentKey = accent) {
-                WidgetConfigContent(
-                    textSize = textSize,
-                    showImages = showImages,
-                    backgroundOpacity = opacity,
-                    borderStyle = borderStyle,
-                    borderColor = borderColor,
-                    borderWidth = borderWidth,
-                    onTextSizeChange = { size ->
-                        scope.launch {
-                            container.prefs.setWidgetTextSize(size)
-                            WishwellWidgetUpdater.updateAll(container.appContext)
-                        }
-                    },
-                    onShowImagesChange = { show ->
-                        scope.launch {
-                            container.prefs.setWidgetShowImages(show)
-                            WishwellWidgetUpdater.updateAll(container.appContext)
-                        }
-                    },
-                    onBackgroundOpacityChange = { percent ->
-                        scope.launch {
-                            container.prefs.setWidgetBackgroundOpacity(percent)
-                            WishwellWidgetUpdater.updateAll(container.appContext)
-                        }
-                    },
-                    onBorderStyleChange = { style ->
-                        scope.launch {
-                            container.prefs.setWidgetBorderStyle(style)
-                            WishwellWidgetUpdater.updateAll(container.appContext)
-                        }
-                    },
-                    onBorderColorChange = { hex ->
-                        scope.launch {
-                            container.prefs.setWidgetBorderColor(hex)
-                            container.prefs.setWidgetBorderStyle("custom")
-                            WishwellWidgetUpdater.updateAll(container.appContext)
-                        }
-                    },
-                    onBorderWidthChange = { dp ->
-                        scope.launch {
-                            container.prefs.setWidgetBorderWidth(dp)
-                            WishwellWidgetUpdater.updateAll(container.appContext)
-                        }
-                    },
-                    onDone = {
-                        setResult(RESULT_OK, resultIntent)
-                        // The system skips the initial update while a configuration activity is
-                        // open, so ask Glance for a repaint before leaving.
-                        scope.launch { WishwellWidgetUpdater.updateAll(container.appContext) }
-                        finish()
-                    },
-                    onCancel = {
-                        setResult(RESULT_CANCELED, resultIntent)
-                        finish()
+                val current = config
+                if (current == null) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
                     }
-                )
+                } else {
+                    val borderColor = resolveWidgetBorderColor(
+                        applicationContext,
+                        current.borderStyle,
+                        current.borderColor,
+                        accent
+                    )
+
+                    fun save(updated: WidgetConfig, write: suspend (MutablePreferences) -> Unit) {
+                        config = updated
+                        scope.launch {
+                            writeWidgetConfig(applicationContext, glanceId, widget, write)
+                        }
+                    }
+
+                    WidgetConfigContent(
+                        isPriceDrops = isPriceDrops,
+                        config = current,
+                        borderColor = borderColor,
+                        onTextSizeChange = { size ->
+                            save(current.copy(textSize = size)) { it[widgetTextSizeKey] = size }
+                        },
+                        onShowImagesChange = { show ->
+                            save(current.copy(showImages = show)) { it[widgetShowImagesKey] = show }
+                        },
+                        onBackgroundOpacityChange = { percent ->
+                            save(current.copy(backgroundOpacity = percent)) {
+                                it[widgetBackgroundOpacityKey] = percent
+                            }
+                        },
+                        onBorderStyleChange = { style ->
+                            save(current.copy(borderStyle = style)) { it[widgetBorderStyleKey] = style }
+                        },
+                        onBorderColorChange = { hex ->
+                            save(current.copy(borderStyle = "custom", borderColor = hex)) {
+                                it[widgetBorderColorKey] = hex
+                                it[widgetBorderStyleKey] = "custom"
+                            }
+                        },
+                        onBorderWidthChange = { dp ->
+                            save(current.copy(borderWidth = dp)) { it[widgetBorderWidthKey] = dp }
+                        },
+                        onDone = {
+                            setResult(RESULT_OK, resultIntent)
+                            // The system skips the initial update while a configuration activity is
+                            // open, so ask Glance for a repaint before leaving.
+                            scope.launch {
+                                runCatching { widget.update(applicationContext, glanceId) }
+                            }
+                            finish()
+                        },
+                        onCancel = {
+                            setResult(RESULT_CANCELED, resultIntent)
+                            finish()
+                        }
+                    )
+                }
             }
         }
+    }
+
+    /** The launcher starts the same configure activity for both widget providers. */
+    private fun isPriceDropsWidget(widgetId: Int): Boolean {
+        val provider = AppWidgetManager.getInstance(this)
+            .getAppWidgetInfo(widgetId)
+            ?.provider
+            ?.className
+        return provider == PriceDropsWidgetReceiver::class.java.name
     }
 }
 
 @Composable
 private fun WidgetConfigContent(
-    textSize: String,
-    showImages: Boolean,
-    backgroundOpacity: Int,
-    borderStyle: String,
+    isPriceDrops: Boolean,
+    config: WidgetConfig,
     borderColor: Color?,
-    borderWidth: Int,
     onTextSizeChange: (String) -> Unit,
     onShowImagesChange: (Boolean) -> Unit,
     onBackgroundOpacityChange: (Int) -> Unit,
@@ -182,11 +211,11 @@ private fun WidgetConfigContent(
 ) {
     val colors = MaterialTheme.colorScheme
     val extra = LocalWishExtraColors.current
-    var sliderOpacity by remember(backgroundOpacity) {
-        mutableFloatStateOf(backgroundOpacity.toFloat())
+    var sliderOpacity by remember(config.backgroundOpacity) {
+        mutableFloatStateOf(config.backgroundOpacity.toFloat())
     }
-    var sliderBorderWidth by remember(borderWidth) {
-        mutableFloatStateOf(borderWidth.toFloat())
+    var sliderBorderWidth by remember(config.borderWidth) {
+        mutableFloatStateOf(config.borderWidth.toFloat())
     }
     var showBorderPicker by remember { mutableStateOf(false) }
 
@@ -204,24 +233,25 @@ private fun WidgetConfigContent(
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            text = "Widget settings",
+            text = if (isPriceDrops) "Price drops widget" else "Wishlisted items widget",
             style = MaterialTheme.typography.headlineMedium,
             color = colors.onBackground
         )
         Spacer(Modifier.height(4.dp))
         Text(
-            text = "Changes apply as you adjust them.",
+            text = "Changes apply to this widget only, as you adjust them.",
             style = MaterialTheme.typography.bodySmall,
             color = extra.muted
         )
 
         Spacer(Modifier.height(16.dp))
         WidgetPreview(
-            textSize = textSize,
-            showImages = showImages,
+            isPriceDrops = isPriceDrops,
+            textSize = config.textSize,
+            showImages = config.showImages,
             opacityPercent = sliderOpacity.roundToInt(),
             borderColor = borderColor,
-            borderWidthDp = if (borderStyle == "none") 0 else sliderBorderWidth.roundToInt()
+            borderWidthDp = if (config.borderStyle == "none") 0 else sliderBorderWidth.roundToInt()
         )
         Spacer(Modifier.height(18.dp))
 
@@ -243,7 +273,7 @@ private fun WidgetConfigContent(
                     .forEach { (key, label) ->
                         WishPill(
                             text = label,
-                            selected = textSize == key,
+                            selected = config.textSize == key,
                             onClick = { onTextSizeChange(key) }
                         )
                     }
@@ -266,7 +296,7 @@ private fun WidgetConfigContent(
                 }
                 Spacer(Modifier.width(10.dp))
                 Switch(
-                    checked = showImages,
+                    checked = config.showImages,
                     onCheckedChange = onShowImagesChange,
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = colors.onPrimary,
@@ -326,7 +356,7 @@ private fun WidgetConfigContent(
                     .forEach { (key, label) ->
                         WishPill(
                             text = label,
-                            selected = borderStyle == key,
+                            selected = config.borderStyle == key,
                             onClick = {
                                 onBorderStyleChange(key)
                                 if (key == "custom") showBorderPicker = true
@@ -334,7 +364,7 @@ private fun WidgetConfigContent(
                         )
                     }
             }
-            if (borderStyle == "custom") {
+            if (config.borderStyle == "custom") {
                 Spacer(Modifier.height(10.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
@@ -353,7 +383,7 @@ private fun WidgetConfigContent(
                     )
                 }
             }
-            if (borderStyle != "none") {
+            if (config.borderStyle != "none") {
                 Spacer(Modifier.height(12.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -387,7 +417,7 @@ private fun WidgetConfigContent(
 
         if (showBorderPicker) {
             AccentColorPickerDialog(
-                initialHex = if (borderStyle == "custom") borderColor?.let { colorToHex(it) } else null,
+                initialHex = if (config.borderStyle == "custom") borderColor?.let { colorToHex(it) } else null,
                 onDismiss = { showBorderPicker = false },
                 onApply = { hex ->
                     onBorderColorChange(hex)
@@ -425,6 +455,7 @@ private val previewEntries = listOf(
 
 @Composable
 private fun WidgetPreview(
+    isPriceDrops: Boolean,
     textSize: String,
     showImages: Boolean,
     opacityPercent: Int,
@@ -433,11 +464,7 @@ private fun WidgetPreview(
 ) {
     val colors = MaterialTheme.colorScheme
     val extra = LocalWishExtraColors.current
-    val scale = when (textSize) {
-        "small" -> 0.88f
-        "large" -> 1.18f
-        else -> 1f
-    }
+    val scale = widgetTextScale(textSize)
     val alpha = opacityPercent / 100f
     fun scaled(value: Float): TextUnit = (value * scale).sp
 
@@ -484,7 +511,7 @@ private fun WidgetPreview(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = "Wishlisted items",
+                        text = if (isPriceDrops) "Price drops" else "Wishlisted items",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Bold,
                         fontSize = scaled(13f),
@@ -493,7 +520,7 @@ private fun WidgetPreview(
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        text = "2 saved",
+                        text = if (isPriceDrops) "2 on sale" else "2 saved",
                         fontSize = scaled(10f),
                         color = extra.muted
                     )

@@ -12,9 +12,9 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.glance.GlanceModifier
 import androidx.glance.Image
 import androidx.glance.ImageProvider
+import androidx.glance.action.Action
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.AndroidRemoteViews
-import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.lazy.LazyColumn
@@ -157,7 +157,8 @@ internal fun WidgetListContent(
     showImages: Boolean = true,
     backgroundOpacity: Float = 1f,
     borderColor: Color? = null,
-    borderWidth: Int = 0
+    borderWidth: Int = 0,
+    syncAction: Action
 ) {
     val outline = if (borderColor == null) 0 else borderWidth.coerceIn(1, MAX_BORDER_DP)
 
@@ -179,6 +180,7 @@ internal fun WidgetListContent(
                 textScale = textScale,
                 showImages = showImages,
                 backgroundOpacity = backgroundOpacity,
+                syncAction = syncAction,
                 modifier = GlanceModifier
                     .fillMaxSize()
                     .padding(outline.dp),
@@ -195,6 +197,7 @@ internal fun WidgetListContent(
             textScale = textScale,
             showImages = showImages,
             backgroundOpacity = backgroundOpacity,
+            syncAction = syncAction,
             modifier = GlanceModifier.fillMaxSize(),
             cornerRadiusDp = 0
         )
@@ -214,6 +217,7 @@ private fun WidgetCard(
     textScale: Float,
     showImages: Boolean,
     backgroundOpacity: Float,
+    syncAction: Action,
     modifier: GlanceModifier,
     cornerRadiusDp: Int
 ) {
@@ -262,7 +266,7 @@ private fun WidgetCard(
                     .background(ColorProvider(syncPillColor))
                     .cornerRadius(11.dp)
                     .padding(horizontal = 9.dp, vertical = 5.dp)
-                    .clickable(actionRunCallback<SyncWidgetAction>()),
+                    .clickable(syncAction),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (isSyncing) {

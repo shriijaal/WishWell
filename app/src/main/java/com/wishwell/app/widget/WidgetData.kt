@@ -47,6 +47,10 @@ internal object WidgetData {
                         when (sortOrder) {
                             "name" -> filtered.sortedBy { it.item.title }
                             "price" -> filtered.sortedByDescending { it.price }
+                            "discount" -> filtered.sortedByDescending {
+                                val discount = it.discountPercent ?: 0
+                                if (it.isAtLowest) maxOf(discount, 1) else discount
+                            }
                             else -> filtered.sortedByDescending { maxOf(it.item.updatedAt, it.item.createdAt) }
                         }
                     }

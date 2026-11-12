@@ -55,6 +55,20 @@
         </receiver>
 
         <receiver
+            android:name=".widget.PriceDropsWidgetReceiver"
+            android:configure=".widget.WidgetConfigActivity"
+            android:exported="true"
+            android:label="@string/widget_price_drops_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.appwidget.action.APPWIDGET_OPTION_CHANGED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/price_drops_widget_info" />
+        </receiver>
+
+        <receiver
             android:name=".widget.WidgetSyncReceiver"
             android:exported="false">
             <intent-filter>

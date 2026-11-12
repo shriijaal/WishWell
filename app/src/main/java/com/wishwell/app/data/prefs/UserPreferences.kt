@@ -116,15 +116,12 @@ class UserPreferences(private val context: Context) {
     val uiTheme: Flow<String> =
         context.dataStore.data.map { it[Keys.UI_THEME] ?: "system" }
 
+    // Legacy global widget appearance. Widgets now keep their own settings in Glance state;
+    // these values only seed the defaults for widgets that were never reconfigured.
+
     /** Widget text size: "small", "default", "large". */
     val widgetTextSize: Flow<String> =
         context.dataStore.data.map { it[Keys.WIDGET_TEXT_SIZE] ?: "default" }
-
-    fun widgetTextScale(size: String): Float = when (size) {
-        "small" -> 0.88f
-        "large" -> 1.18f
-        else -> 1f
-    }
 
     val widgetShowImages: Flow<Boolean> =
         context.dataStore.data.map { it[Keys.WIDGET_SHOW_IMAGES] ?: true }
@@ -217,18 +214,6 @@ class UserPreferences(private val context: Context) {
         context.dataStore.edit { it[Keys.UI_THEME] = theme }
     }
 
-    suspend fun setWidgetTextSize(size: String) {
-        context.dataStore.edit { it[Keys.WIDGET_TEXT_SIZE] = size }
-    }
-
-    suspend fun setWidgetShowImages(show: Boolean) {
-        context.dataStore.edit { it[Keys.WIDGET_SHOW_IMAGES] = show }
-    }
-
-    suspend fun setWidgetBackgroundOpacity(percent: Int) {
-        context.dataStore.edit { it[Keys.WIDGET_BACKGROUND_OPACITY] = percent.coerceIn(20, 100) }
-    }
-
     /** Widget border: "none", "accent", or "custom". */
     val widgetBorderStyle: Flow<String> =
         context.dataStore.data.map { it[Keys.WIDGET_BORDER_STYLE] ?: "none" }
@@ -240,16 +225,4 @@ class UserPreferences(private val context: Context) {
     /** Widget border thickness in dp, 1-8. */
     val widgetBorderWidth: Flow<Int> =
         context.dataStore.data.map { (it[Keys.WIDGET_BORDER_WIDTH] ?: 2).coerceIn(1, 8) }
-
-    suspend fun setWidgetBorderStyle(style: String) {
-        context.dataStore.edit { it[Keys.WIDGET_BORDER_STYLE] = style }
-    }
-
-    suspend fun setWidgetBorderColor(hex: String) {
-        context.dataStore.edit { it[Keys.WIDGET_BORDER_COLOR] = hex }
-    }
-
-    suspend fun setWidgetBorderWidth(dp: Int) {
-        context.dataStore.edit { it[Keys.WIDGET_BORDER_WIDTH] = dp.coerceIn(1, 8) }
-    }
 }

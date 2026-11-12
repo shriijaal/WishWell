@@ -5,7 +5,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.wishwell.app.data.repo.WishlistRepository
 import com.wishwell.app.di.AppContainer
-import com.wishwell.app.widget.WishwellWidgetUpdater as WidgetUpdater
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -37,23 +36,7 @@ data class SettingsUiState(
     val backupFileCount: Int = 0,
     val backupFiles: List<WishlistRepository.BackupFileInfo> = emptyList(),
     // Theme state
-    val uiTheme: String = "system",
-    // Widget appearance
-    val widgetTextSize: String = "default",
-    val widgetShowImages: Boolean = true,
-    val widgetBackgroundOpacity: Int = 100,
-    val widgetBorderStyle: String = "none",
-    val widgetBorderColor: String = "#1F3D2E",
-    val widgetBorderWidth: Int = 2
-)
-
-private data class WidgetPrefsSnapshot(
-    val textSize: String,
-    val showImages: Boolean,
-    val backgroundOpacity: Int,
-    val borderStyle: String,
-    val borderColor: String,
-    val borderWidth: Int
+    val uiTheme: String = "system"
 )
 
 private data class PrefsSnapshot(
@@ -67,13 +50,7 @@ private data class PrefsSnapshot(
     val navbarGlassGlow: Boolean,
     val backupLocation: String,
     val autoBackupFrequency: String,
-    val uiTheme: String,
-    val widgetTextSize: String = "default",
-    val widgetShowImages: Boolean = true,
-    val widgetBackgroundOpacity: Int = 100,
-    val widgetBorderStyle: String = "none",
-    val widgetBorderColor: String = "#1F3D2E",
-    val widgetBorderWidth: Int = 2
+    val uiTheme: String
 )
 
 private data class StatusSnapshot(
@@ -112,29 +89,6 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         prefs.autoBackupFrequency
     ) { location, frequency -> location to frequency }
 
-    private val widgetAppearancePrefs = combine(
-        prefs.widgetTextSize,
-        prefs.widgetShowImages,
-        prefs.widgetBackgroundOpacity
-    ) { size, images, opacity -> Triple(size, images, opacity) }
-
-    private val widgetBorderPrefs = combine(
-        prefs.widgetBorderStyle,
-        prefs.widgetBorderColor,
-        prefs.widgetBorderWidth
-    ) { style, color, width -> Triple(style, color, width) }
-
-    private val widgetPrefs = combine(widgetAppearancePrefs, widgetBorderPrefs) { look, border ->
-        WidgetPrefsSnapshot(
-            textSize = look.first,
-            showImages = look.second,
-            backgroundOpacity = look.third,
-            borderStyle = border.first,
-            borderColor = border.second,
-            borderWidth = border.third
-        )
-    }
-
     private val basePrefsSnapshot = combine(
         prefsCore1, prefsCore2, navPrefs, backupPrefs, prefs.uiTheme
     ) { c1, c2, nav, bk, theme ->
@@ -153,17 +107,6 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         )
     }
 
-    private val prefsSnapshot = combine(basePrefsSnapshot, widgetPrefs) { base, widget ->
-        base.copy(
-            widgetTextSize = widget.textSize,
-            widgetShowImages = widget.showImages,
-            widgetBackgroundOpacity = widget.backgroundOpacity,
-            widgetBorderStyle = widget.borderStyle,
-            widgetBorderColor = widget.borderColor,
-            widgetBorderWidth = widget.borderWidth
-        )
-    }
-
     private val statusSnapshot = combine(
         refreshing,
         message,
@@ -173,7 +116,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     val state: StateFlow<SettingsUiState> = combine(
-        prefsSnapshot,
+        basePrefsSnapshot,
         statusSnapshot,
         prefs.lastRefreshAt,
         prefs.lastBackupAt,
@@ -198,12 +141,6 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             lastBackupAt = lastBackup,
             backupFileCount = backupPaths.size,
             uiTheme = p.uiTheme,
-            widgetTextSize = p.widgetTextSize,
-            widgetShowImages = p.widgetShowImages,
-            widgetBackgroundOpacity = p.widgetBackgroundOpacity,
-            widgetBorderStyle = p.widgetBorderStyle,
-            widgetBorderColor = p.widgetBorderColor,
-            widgetBorderWidth = p.widgetBorderWidth,
             backupFiles = backupFiles.value
         )
     }.stateIn(
@@ -265,48 +202,6 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun setUiTheme(theme: String) {
         viewModelScope.launch { prefs.setUiTheme(theme) }
-    }
-
-    fun setWidgetTextSize(size: String) {
-        viewModelScope.launch {
-            prefs.setWidgetTextSize(size)
-            WidgetUpdater.updateAll(container.appContext)
-        }
-    }
-
-    fun setWidgetShowImages(show: Boolean) {
-        viewModelScope.launch {
-            prefs.setWidgetShowImages(show)
-            WidgetUpdater.updateAll(container.appContext)
-        }
-    }
-
-    fun setWidgetBackgroundOpacity(percent: Int) {
-        viewModelScope.launch {
-            prefs.setWidgetBackgroundOpacity(percent)
-            WidgetUpdater.updateAll(container.appContext)
-        }
-    }
-
-    fun setWidgetBorderStyle(style: String) {
-        viewModelScope.launch {
-            prefs.setWidgetBorderStyle(style)
-            WidgetUpdater.updateAll(container.appContext)
-        }
-    }
-
-    fun setWidgetBorderColor(hex: String) {
-        viewModelScope.launch {
-            prefs.setWidgetBorderColor(hex)
-            WidgetUpdater.updateAll(container.appContext)
-        }
-    }
-
-    fun setWidgetBorderWidth(dp: Int) {
-        viewModelScope.launch {
-            prefs.setWidgetBorderWidth(dp)
-            WidgetUpdater.updateAll(container.appContext)
-        }
     }
 
     // ---------------------------------------------------------------- backup
