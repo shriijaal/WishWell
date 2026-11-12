@@ -33,6 +33,8 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -41,6 +43,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -96,6 +99,13 @@ fun SettingsScreen(container: AppContainer) {
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showCustomPicker by remember { mutableStateOf(false) }
     var backupBusy by remember { mutableStateOf(false) }
+    var widgetOpacity by remember(state.widgetBackgroundOpacity) {
+        mutableFloatStateOf(state.widgetBackgroundOpacity.toFloat())
+    }
+    var widgetBorderWidth by remember(state.widgetBorderWidth) {
+        mutableFloatStateOf(state.widgetBorderWidth.toFloat())
+    }
+    var showWidgetBorderPicker by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         viewModel.loadStorageUsage()
@@ -552,6 +562,151 @@ fun SettingsScreen(container: AppContainer) {
         }
 
         Spacer(Modifier.height(18.dp))
+        SectionLabel("Home screen widget")
+        Spacer(Modifier.height(10.dp))
+        SettingsCard {
+            Text(
+                text = "Text size",
+                style = MaterialTheme.typography.titleSmall,
+                color = colors.onSurface
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = "How large item names and prices appear in the widget.",
+                style = MaterialTheme.typography.bodySmall,
+                color = extra.muted
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(
+                    "small" to "Small",
+                    "default" to "Default",
+                    "large" to "Large"
+                ).forEach { (key, label) ->
+                    WishPill(
+                        text = label,
+                        selected = state.widgetTextSize == key,
+                        onClick = { viewModel.setWidgetTextSize(key) }
+                    )
+                }
+            }
+            RowDivider()
+            SwitchRow(
+                title = "Item images",
+                subtitle = "Show a thumbnail for each saved item",
+                checked = state.widgetShowImages,
+                onCheckedChange = viewModel::setWidgetShowImages
+            )
+            RowDivider()
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "Background opacity",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = colors.onSurface,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    text = "${widgetOpacity.roundToInt()}%",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = extra.muted
+                )
+            }
+            Slider(
+                value = widgetOpacity,
+                onValueChange = { widgetOpacity = it },
+                onValueChangeFinished = {
+                    viewModel.setWidgetBackgroundOpacity(widgetOpacity.roundToInt())
+                },
+                valueRange = 20f..100f,
+                colors = SliderDefaults.colors(
+                    thumbColor = colors.primary,
+                    activeTrackColor = colors.primary,
+                    inactiveTrackColor = extra.hairline
+                )
+            )
+            Text(
+                text = "Lower values let more of your wallpaper show through.",
+                style = MaterialTheme.typography.labelSmall,
+                color = extra.muted
+            )
+            RowDivider()
+            Text(
+                text = "Border",
+                style = MaterialTheme.typography.titleSmall,
+                color = colors.onSurface
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = "Outline around the edge of the widget.",
+                style = MaterialTheme.typography.bodySmall,
+                color = extra.muted
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("none" to "None", "accent" to "Accent", "custom" to "Custom")
+                    .forEach { (key, label) ->
+                        WishPill(
+                            text = label,
+                            selected = state.widgetBorderStyle == key,
+                            onClick = {
+                                viewModel.setWidgetBorderStyle(key)
+                                if (key == "custom") showWidgetBorderPicker = true
+                            }
+                        )
+                    }
+            }
+            if (state.widgetBorderStyle == "custom") {
+                Spacer(Modifier.height(10.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(20.dp)
+                            .clip(CircleShape)
+                            .background(parseHexColor(state.widgetBorderColor) ?: colors.primary)
+                            .border(1.dp, extra.hairline, CircleShape)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "Pick any color",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.primary,
+                        modifier = Modifier.clickable { showWidgetBorderPicker = true }
+                    )
+                }
+            }
+            if (state.widgetBorderStyle != "none") {
+                Spacer(Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "Thickness",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = colors.onSurface,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        text = "${widgetBorderWidth.roundToInt()} dp",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = extra.muted
+                    )
+                }
+                Slider(
+                    value = widgetBorderWidth,
+                    onValueChange = { widgetBorderWidth = it },
+                    onValueChangeFinished = {
+                        viewModel.setWidgetBorderWidth(widgetBorderWidth.roundToInt())
+                    },
+                    valueRange = 1f..8f,
+                    steps = 6,
+                    colors = SliderDefaults.colors(
+                        thumbColor = colors.primary,
+                        activeTrackColor = colors.primary,
+                        inactiveTrackColor = extra.hairline
+                    )
+                )
+            }
+        }
+
+        Spacer(Modifier.height(18.dp))
         SectionLabel("Data")
         Spacer(Modifier.height(10.dp))
         SettingsCard {
@@ -831,6 +986,21 @@ fun SettingsScreen(container: AppContainer) {
                 showDeleteDialog = false
             },
             onDismiss = { showDeleteDialog = false }
+        )
+    }
+
+    if (showWidgetBorderPicker) {
+        AccentColorPickerDialog(
+            initialHex = state.widgetBorderColor,
+            onDismiss = { showWidgetBorderPicker = false },
+            onApply = { hex ->
+                viewModel.setWidgetBorderColor(hex)
+                showWidgetBorderPicker = false
+            },
+            onResetDefault = { showWidgetBorderPicker = false },
+            title = "Widget border color",
+            subtitle = "Pick any color for the widget outline.",
+            showReset = false
         )
     }
 

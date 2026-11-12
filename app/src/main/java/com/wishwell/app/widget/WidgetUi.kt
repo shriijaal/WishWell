@@ -3,34 +3,45 @@ package com.wishwell.app.widget
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.widget.RemoteViews
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.glance.GlanceId
+import androidx.datastore.preferences.core.Preferences
 import androidx.glance.GlanceModifier
+import androidx.glance.Image
+import androidx.glance.ImageProvider
 import androidx.glance.action.clickable
+import androidx.glance.appwidget.AndroidRemoteViews
+import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.lazy.LazyColumn
 import androidx.glance.appwidget.lazy.items
 import androidx.glance.background
+import androidx.glance.currentState
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
 import androidx.glance.layout.Column
+import androidx.glance.layout.ContentScale
 import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.height
 import androidx.glance.layout.padding
+import androidx.glance.layout.size
 import androidx.glance.layout.width
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
+import androidx.glance.text.TextAlign
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
-import com.wishwell.app.MainActivity
+import com.wishwell.app.R
 import com.wishwell.app.notify.Notifier
+import com.wishwell.app.ui.theme.parseHexColor
+import com.wishwell.app.ui.theme.resolveAccent
 
 internal object WidgetColors {
     // Light theme
@@ -48,6 +59,12 @@ internal object WidgetColors {
     val darkHairline = Color(0xFF333A2C)
     val darkSunken = Color(0xFF22271D)
     val darkForest = Color(0xFFCFE39C)
+
+    // Badges look the same in both themes: a soft green chip with readable green ink.
+    val lightBadgeBg = Color(0xFFDCE8D6)
+    val lightBadgeInk = Color(0xFF1F3D2E)
+    val darkBadgeBg = Color(0xFF2C3A24)
+    val darkBadgeInk = Color(0xFFCFE39C)
 }
 
 private fun isDarkTheme(context: Context): Boolean {
@@ -57,6 +74,18 @@ private fun isDarkTheme(context: Context): Boolean {
     }
     return false
 }
+
+private data class WidgetColorsHolder(
+    val paper: Color,
+    val ink: Color,
+    val muted: Color,
+    val hairline: Color,
+    val sunken: Color,
+    val forest: Color,
+    val badgeBg: Color,
+    val badgeInk: Color,
+    val isDark: Boolean
+)
 
 private fun resolveColors(context: Context): WidgetColorsHolder {
     val systemDark = isDarkTheme(context)
@@ -68,6 +97,8 @@ private fun resolveColors(context: Context): WidgetColorsHolder {
             hairline = WidgetColors.darkHairline,
             sunken = WidgetColors.darkSunken,
             forest = WidgetColors.darkForest,
+            badgeBg = WidgetColors.darkBadgeBg,
+            badgeInk = WidgetColors.darkBadgeInk,
             isDark = true
         )
     } else {
@@ -78,20 +109,34 @@ private fun resolveColors(context: Context): WidgetColorsHolder {
             hairline = WidgetColors.lightHairline,
             sunken = WidgetColors.lightSunken,
             forest = WidgetColors.lightForest,
+            badgeBg = WidgetColors.lightBadgeBg,
+            badgeInk = WidgetColors.lightBadgeInk,
             isDark = false
         )
     }
 }
 
-private data class WidgetColorsHolder(
-    val paper: Color,
-    val ink: Color,
-    val muted: Color,
-    val hairline: Color,
-    val sunken: Color,
-    val forest: Color,
-    val isDark: Boolean
-)
+/**
+ * Resolves the widget outline color from its stored style: "none", "accent" (follows the app
+ * accent, picked for the current light/dark theme) or "custom" (user-picked hex).
+ */
+internal fun resolveWidgetBorderColor(
+    context: Context,
+    style: String,
+    customHex: String?,
+    accentKey: String?
+): Color? = when (style) {
+    "accent" -> {
+        val preset = resolveAccent(accentKey)
+        if (isDarkTheme(context)) preset.darkPrimary else preset.lightPrimary
+    }
+    "custom" -> parseHexColor(customHex)
+    else -> null
+}
+
+/** The sync pill keeps the same dark forest fill in both themes so its white content stays readable. */
+private val syncPillColor = Color(0xFF1F3D2E)
+private val syncPillContent = Color(0xFFF4F1E8)
 
 private fun appIntent(contextId: Long? = null): Intent =
     Intent(Intent.ACTION_VIEW).setClassName("com.wishwell.app", "com.wishwell.app.MainActivity").apply {
@@ -99,11 +144,7 @@ private fun appIntent(contextId: Long? = null): Intent =
         if (contextId != null && contextId > 0) putExtra(Notifier.EXTRA_ITEM_ID, contextId)
     }
 
-private fun syncWidgetIntent(): Intent =
-    Intent("com.wishwell.app.action.SYNC_WIDGET").apply {
-        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        setPackage("com.wishwell.app")
-    }
+private fun scaledSize(value: Float, scale: Float) = (value * scale).sp
 
 @Composable
 internal fun WidgetListContent(
@@ -111,56 +152,146 @@ internal fun WidgetListContent(
     title: String,
     subtitle: String,
     entries: List<WidgetEntry>,
-    emptyMessage: String
+    emptyMessage: String,
+    textScale: Float = 1f,
+    showImages: Boolean = true,
+    backgroundOpacity: Float = 1f,
+    borderColor: Color? = null,
+    borderWidth: Int = 0
+) {
+    val outline = if (borderColor == null) 0 else borderWidth.coerceIn(1, MAX_BORDER_DP)
+
+    if (outline > 0 && borderColor != null) {
+        Box(
+            modifier = GlanceModifier
+                .fillMaxSize()
+                .background(
+                    ColorProvider(borderColor.copy(alpha = backgroundOpacity.coerceIn(0.2f, 1f)))
+                )
+                .cornerRadius(WIDGET_CORNER_DP.dp)
+        ) {
+            WidgetCard(
+                context = context,
+                title = title,
+                subtitle = subtitle,
+                entries = entries,
+                emptyMessage = emptyMessage,
+                textScale = textScale,
+                showImages = showImages,
+                backgroundOpacity = backgroundOpacity,
+                modifier = GlanceModifier
+                    .fillMaxSize()
+                    .padding(outline.dp),
+                cornerRadiusDp = WIDGET_CORNER_DP - outline
+            )
+        }
+    } else {
+        WidgetCard(
+            context = context,
+            title = title,
+            subtitle = subtitle,
+            entries = entries,
+            emptyMessage = emptyMessage,
+            textScale = textScale,
+            showImages = showImages,
+            backgroundOpacity = backgroundOpacity,
+            modifier = GlanceModifier.fillMaxSize(),
+            cornerRadiusDp = 0
+        )
+    }
+}
+
+internal const val WIDGET_CORNER_DP = 20
+internal const val MAX_BORDER_DP = 8
+
+@Composable
+private fun WidgetCard(
+    context: Context,
+    title: String,
+    subtitle: String,
+    entries: List<WidgetEntry>,
+    emptyMessage: String,
+    textScale: Float,
+    showImages: Boolean,
+    backgroundOpacity: Float,
+    modifier: GlanceModifier,
+    cornerRadiusDp: Int
 ) {
     val colors = resolveColors(context)
-    val accent = colors.forest
+    val isSyncing = currentState<Preferences>()[syncingKey] ?: false
+
+    val cardModifier = modifier
+        .background(ColorProvider(colors.paper.copy(alpha = backgroundOpacity.coerceIn(0.2f, 1f))))
+        .let { if (cornerRadiusDp > 0) it.cornerRadius(cornerRadiusDp.dp) else it }
 
     Column(
-        modifier = GlanceModifier
-            .fillMaxSize()
-            .background(ColorProvider(colors.paper))
-            .padding(16.dp)
+        modifier = cardModifier
+            .padding(horizontal = 14.dp, vertical = 10.dp)
             .clickable(actionStartActivity(appIntent()))
     ) {
         // ── Header ──
         Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = GlanceModifier.defaultWeight()) {
+            Row(
+                modifier = GlanceModifier.defaultWeight(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
                     text = title,
                     style = TextStyle(
                         color = ColorProvider(colors.ink),
-                        fontSize = 16.sp,
+                        fontSize = scaledSize(13f, textScale),
                         fontWeight = FontWeight.Bold
                     ),
                     maxLines = 1
                 )
-                Spacer(modifier = GlanceModifier.height(4.dp))
-                Text(
-                    text = subtitle,
-                    style = TextStyle(color = ColorProvider(colors.muted), fontSize = 10.sp),
-                    maxLines = 2
-                )
+                if (subtitle.isNotBlank()) {
+                    Spacer(modifier = GlanceModifier.width(6.dp))
+                    Text(
+                        text = subtitle,
+                        style = TextStyle(
+                            color = ColorProvider(colors.muted),
+                            fontSize = scaledSize(10f, textScale)
+                        ),
+                        maxLines = 1
+                    )
+                }
             }
-            Spacer(modifier = GlanceModifier.width(8.dp))
-            Box(
+            Spacer(modifier = GlanceModifier.width(10.dp))
+            Row(
                 modifier = GlanceModifier
-                    .background(ColorProvider(accent))
-                    .cornerRadius(10.dp)
-                    .padding(horizontal = 10.dp, vertical = 4.dp)
-                    .clickable(actionStartActivity(syncWidgetIntent()))
+                    .background(ColorProvider(syncPillColor))
+                    .cornerRadius(11.dp)
+                    .padding(horizontal = 9.dp, vertical = 5.dp)
+                    .clickable(actionRunCallback<SyncWidgetAction>()),
+                verticalAlignment = Alignment.CenterVertically
             ) {
+                if (isSyncing) {
+                    AndroidRemoteViews(
+                        remoteViews = RemoteViews(context.packageName, R.layout.widget_sync_spinner),
+                        modifier = GlanceModifier.size(12.dp)
+                    )
+                } else {
+                    Text(
+                        text = "↻",
+                        style = TextStyle(
+                            color = ColorProvider(syncPillContent),
+                            fontSize = scaledSize(13f, textScale),
+                            fontWeight = FontWeight.Bold
+                        )
+                    )
+                }
+                Spacer(modifier = GlanceModifier.width(5.dp))
                 Text(
-                    text = "↻ Sync",
+                    text = if (isSyncing) "Syncing" else "Sync",
                     style = TextStyle(
-                        color = ColorProvider(Color.White),
-                        fontSize = 10.sp,
+                        color = ColorProvider(syncPillContent),
+                        fontSize = scaledSize(10f, textScale),
                         fontWeight = FontWeight.Bold
                     )
                 )
             }
         }
-        Spacer(modifier = GlanceModifier.height(12.dp))
+        Spacer(modifier = GlanceModifier.height(9.dp))
         // ── Divider ──
         Box(
             modifier = GlanceModifier
@@ -168,21 +299,22 @@ internal fun WidgetListContent(
                 .height(1.dp)
                 .background(ColorProvider(colors.hairline))
         ) { }
-        Spacer(modifier = GlanceModifier.height(16.dp))
+        Spacer(modifier = GlanceModifier.height(7.dp))
 
         if (entries.isEmpty()) {
-            WidgetSkeletonLoader(colors = colors, count = 3)
+            EmptyState(colors = colors, message = emptyMessage)
         } else {
             LazyColumn(modifier = GlanceModifier.fillMaxSize()) {
                 items(items = entries.take(8)) { entry ->
-                    EntryRow(
-                        entry = entry,
-                        colors = colors,
-                        accent = accent,
-                        showPrice = true,
-                        showStore = true,
-                        fontSize = 1.0f
-                    )
+                    Column(modifier = GlanceModifier.fillMaxWidth()) {
+                        EntryRow(
+                            entry = entry,
+                            colors = colors,
+                            textScale = textScale,
+                            showImages = showImages
+                        )
+                        Spacer(modifier = GlanceModifier.height(6.dp))
+                    }
                 }
             }
         }
@@ -193,75 +325,76 @@ internal fun WidgetListContent(
 private fun EntryRow(
     entry: WidgetEntry,
     colors: WidgetColorsHolder,
-    accent: Color = Color(0xFF1F3D2E),
-    showPrice: Boolean = true,
-    showStore: Boolean = true,
-    fontSize: Float = 1.0f
+    textScale: Float,
+    showImages: Boolean
 ) {
-    val baseSize = 14f
-    val titleSize = baseSize * fontSize.coerceIn(0.75f, 1.5f)
-    val subtitleSize = 10f * fontSize.coerceIn(0.75f, 1.5f)
-
     Box(
         modifier = GlanceModifier
             .fillMaxWidth()
             .background(ColorProvider(colors.sunken))
-            .cornerRadius(16.dp)
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .cornerRadius(11.dp)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
             .clickable(actionStartActivity(appIntent(entry.id))),
         contentAlignment = Alignment.Center
     ) {
         Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            entry.image?.takeIf { showImages }?.let { bitmap ->
+                Image(
+                    provider = ImageProvider(bitmap),
+                    contentDescription = null,
+                    modifier = GlanceModifier.size(34.dp).cornerRadius(8.dp),
+                    contentScale = ContentScale.Crop
+                )
+                Spacer(modifier = GlanceModifier.width(9.dp))
+            }
             Column(modifier = GlanceModifier.defaultWeight()) {
                 Text(
                     text = entry.title,
                     style = TextStyle(
                         color = ColorProvider(colors.ink),
-                        fontSize = titleSize.sp,
+                        fontSize = scaledSize(12f, textScale),
                         fontWeight = FontWeight.Medium
                     ),
                     maxLines = 2
                 )
-                Spacer(modifier = GlanceModifier.height(2.dp))
-                Row(
-                    modifier = GlanceModifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (showStore) {
-                        Text(
-                            text = entry.storeName,
-                            style = TextStyle(color = ColorProvider(colors.muted), fontSize = subtitleSize.sp),
-                            maxLines = 1
-                        )
-                        Spacer(modifier = GlanceModifier.width(8.dp))
-                    }
-                    if (showPrice) {
-                        Text(
-                            text = entry.priceText,
-                            style = TextStyle(color = ColorProvider(colors.muted), fontSize = subtitleSize.sp),
-                            maxLines = 1
-                        )
-                    }
-                }
+                Spacer(modifier = GlanceModifier.height(1.dp))
+                Text(
+                    text = entry.storeName,
+                    style = TextStyle(
+                        color = ColorProvider(colors.muted),
+                        fontSize = scaledSize(10f, textScale)
+                    ),
+                    maxLines = 1
+                )
             }
-            entry.badge?.let { badge ->
-                Spacer(modifier = GlanceModifier.width(8.dp))
-                Box(
-                    modifier = GlanceModifier
-                        .background(ColorProvider(if (entry.isDrop) Color(0xFFDCE8D6) else accent))
-                        .cornerRadius(8.dp)
-                        .padding(horizontal = 6.dp, vertical = 3.dp)
-                ) {
-                    Text(
-                        text = badge,
-                        style = TextStyle(
-                            color = ColorProvider(
-                                if (entry.isDrop) Color(0xFF1F3D2E) else Color.White
-                            ),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
+            Spacer(modifier = GlanceModifier.width(12.dp))
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = entry.priceText,
+                    style = TextStyle(
+                        color = ColorProvider(colors.ink),
+                        fontSize = scaledSize(12f, textScale),
+                        fontWeight = FontWeight.Bold
+                    ),
+                    maxLines = 1
+                )
+                entry.badge?.let { badge ->
+                    Spacer(modifier = GlanceModifier.height(4.dp))
+                    Box(
+                        modifier = GlanceModifier
+                            .background(ColorProvider(colors.badgeBg))
+                            .cornerRadius(7.dp)
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = badge,
+                            style = TextStyle(
+                                color = ColorProvider(colors.badgeInk),
+                                fontSize = scaledSize(9f, textScale),
+                                fontWeight = FontWeight.Bold
+                            )
                         )
-                    )
+                    }
                 }
             }
         }
@@ -269,51 +402,37 @@ private fun EntryRow(
 }
 
 @Composable
-private fun WidgetSkeletonLoader(
-    colors: WidgetColorsHolder,
-    count: Int = 3
-) {
-    LazyColumn(modifier = GlanceModifier.fillMaxSize()) {
-        items(count) { _ ->
-            Box(
-                modifier = GlanceModifier
-                    .fillMaxWidth()
-                    .background(ColorProvider(colors.sunken))
-                    .cornerRadius(16.dp)
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Column(modifier = GlanceModifier.defaultWeight()) {
-                        // Title skeleton line
-                        Box(
-                            modifier = GlanceModifier
-                                .width(200.dp)
-                                .height(14.dp)
-                                .background(ColorProvider(colors.muted.copy(alpha = 0.35f)))
-                                .cornerRadius(4.dp)
-                        ) { }
-                        Spacer(modifier = GlanceModifier.height(2.dp))
-                        // Subtitle skeleton line
-                        Box(
-                            modifier = GlanceModifier
-                                .width(100.dp)
-                                .height(10.dp)
-                                .background(ColorProvider(colors.muted.copy(alpha = 0.25f)))
-                                .cornerRadius(4.dp)
-                        ) { }
-                    }
-                    // Badge skeleton box
-                    Box(
-                        modifier = GlanceModifier
-                            .width(34.dp)
-                            .height(20.dp)
-                            .background(ColorProvider(colors.hairline.copy(alpha = 0.5f)))
-                            .cornerRadius(8.dp)
-                    ) { }
-                }
-            }
-            Spacer(modifier = GlanceModifier.height(12.dp))
+private fun EmptyState(colors: WidgetColorsHolder, message: String) {
+    Box(
+        modifier = GlanceModifier.fillMaxSize().padding(horizontal = 12.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = "♡",
+                style = TextStyle(color = ColorProvider(colors.muted), fontSize = 26.sp)
+            )
+            Spacer(modifier = GlanceModifier.height(8.dp))
+            Text(
+                text = message,
+                style = TextStyle(
+                    color = ColorProvider(colors.ink),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    textAlign = TextAlign.Center
+                ),
+                maxLines = 2
+            )
+            Spacer(modifier = GlanceModifier.height(4.dp))
+            Text(
+                text = "Open Wishwell and save an item to get started.",
+                style = TextStyle(
+                    color = ColorProvider(colors.muted),
+                    fontSize = 11.sp,
+                    textAlign = TextAlign.Center
+                ),
+                maxLines = 2
+            )
         }
     }
 }

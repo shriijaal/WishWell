@@ -80,6 +80,7 @@ class MainActivity : ComponentActivity() {
     private fun Intent.extractItemId(): Long? =
         getLongExtra(Notifier.EXTRA_ITEM_ID, -1L).takeIf { it > 0L }
 
+
     private fun Intent.extractSharedUrl(): String? {
         val text = when (action) {
             Intent.ACTION_SEND -> getStringExtra(Intent.EXTRA_TEXT)

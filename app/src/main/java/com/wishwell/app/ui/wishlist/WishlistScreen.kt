@@ -41,7 +41,6 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
-import androidx.compose.material.icons.rounded.Done
 import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.material.icons.rounded.DriveFileMove
 import androidx.compose.material.icons.rounded.ExpandMore
@@ -124,6 +123,7 @@ import com.wishwell.app.ui.components.ConfirmDialog
 import com.wishwell.app.ui.components.ProductThumb
 import com.wishwell.app.ui.components.ReorderItemsSheet
 import com.wishwell.app.ui.components.RollingPriceText
+import com.wishwell.app.ui.components.CollapsibleSectionLabel
 import com.wishwell.app.ui.components.SectionLabel
 import com.wishwell.app.ui.components.StoreLogo
 import com.wishwell.app.ui.components.SwipeableWishCard
@@ -167,7 +167,7 @@ fun WishlistScreen(
     var pendingDeleteId by remember { mutableStateOf<Long?>(null) }
     var showBulkDeleteConfirm by remember { mutableStateOf(false) }
     var showMoveSheet by remember { mutableStateOf(false) }
-    var showReorderSheet by remember { mutableStateOf(false) }
+    var showReorderSheet by remember { mutableStateOf(false) }
     var revealedItemId by remember { mutableStateOf<Long?>(null) }
     LaunchedEffect(state.selectionMode) {
         if (state.selectionMode) revealedItemId = null else {
@@ -386,7 +386,6 @@ fun WishlistScreen(
                             onOpenItem = onOpenItem,
                             onToggleSelection = vm::toggleSelection,
                             onEnterSelection = vm::enterSelection,
-                            onItemPurchasedChanged = { id, purchased -> vm.togglePurchased(id, purchased) },
                             expanded = sectionExpanded[catKey] ?: true
                         )
                     }
@@ -394,25 +393,12 @@ fun WishlistScreen(
                     val attention = state.items.filter(::needsAttention)
                     val rest = state.items.filter { !needsAttention(it) }
                     item(key = "section-attention") {
-                        SectionLabel(
+                        CollapsibleSectionLabel(
                             text = "Needs attention",
-                            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 4.dp),
-                            trailing = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = "${attention.size}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = extra.muted
-                                    )
-                                    IconButton(onClick = { toggleSection("attention") }) {
-                                        Icon(
-                                            imageVector = if (sectionExpanded["attention"] ?: true) Icons.Rounded.ExpandMore else Icons.Rounded.ExpandLess,
-                                            contentDescription = if (sectionExpanded["attention"] ?: true) "Collapse attention" else "Expand attention",
-                                            tint = extra.muted
-                                        )
-                                    }
-                                }
-                            }
+                            expanded = sectionExpanded["attention"] ?: true,
+                            onToggle = { toggleSection("attention") },
+                            count = attention.size,
+                            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 4.dp)
                         )
                     }
                     gridRows(
@@ -423,22 +409,15 @@ fun WishlistScreen(
                         onOpenItem = onOpenItem,
                         onToggleSelection = vm::toggleSelection,
                         onEnterSelection = vm::enterSelection,
-                        onItemPurchasedChanged = { id, purchased -> vm.togglePurchased(id, purchased) },
                         expanded = sectionExpanded["attention"] ?: true
                     )
                     item(key = "section-library") {
-                        SectionLabel(
+                        CollapsibleSectionLabel(
                             text = "Library",
-                            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 4.dp),
-                            trailing = {
-                                IconButton(onClick = { toggleSection("library") }) {
-                                    Icon(
-                                        imageVector = if (sectionExpanded["library"] ?: true) Icons.Rounded.ExpandMore else Icons.Rounded.ExpandLess,
-                                        contentDescription = if (sectionExpanded["library"] ?: true) "Collapse library" else "Expand library",
-                                        tint = extra.muted
-                                    )
-                                }
-                            }
+                            expanded = sectionExpanded["library"] ?: true,
+                            onToggle = { toggleSection("library") },
+                            count = rest.size,
+                            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 4.dp)
                         )
                     }
                     gridRows(
@@ -449,7 +428,6 @@ fun WishlistScreen(
                         onOpenItem = onOpenItem,
                         onToggleSelection = vm::toggleSelection,
                         onEnterSelection = vm::enterSelection,
-                        onItemPurchasedChanged = { id, purchased -> vm.togglePurchased(id, purchased) },
                         expanded = sectionExpanded["library"] ?: true
                     )
                 } else {
@@ -461,7 +439,6 @@ fun WishlistScreen(
                         onOpenItem = onOpenItem,
                         onToggleSelection = vm::toggleSelection,
                         onEnterSelection = vm::enterSelection,
-                        onItemPurchasedChanged = { id, purchased -> vm.togglePurchased(id, purchased) }
                     )
                 }
             }
@@ -500,7 +477,6 @@ fun WishlistScreen(
                             onOpenItem = onOpenItem,
                             onToggleSelection = vm::toggleSelection,
                             onEnterSelection = vm::enterSelection,
-                            onItemPurchasedChanged = { id, purchased -> vm.togglePurchased(id, purchased) },
                             expanded = sectionExpanded[catKey] ?: true
                         )
                     }
@@ -508,25 +484,12 @@ fun WishlistScreen(
                     val attention = state.items.filter(::needsAttention)
                     val rest = state.items.filter { !needsAttention(it) }
                     item(key = "section-attention") {
-                        SectionLabel(
+                        CollapsibleSectionLabel(
                             text = "Needs attention",
-                            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 4.dp),
-                            trailing = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = "${attention.size}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = extra.muted
-                                    )
-                                    IconButton(onClick = { toggleSection("attention") }) {
-                                        Icon(
-                                            imageVector = if (sectionExpanded["attention"] ?: true) Icons.Rounded.ExpandMore else Icons.Rounded.ExpandLess,
-                                            contentDescription = if (sectionExpanded["attention"] ?: true) "Collapse attention" else "Expand attention",
-                                            tint = extra.muted
-                                        )
-                                    }
-                                }
-                            }
+                            expanded = sectionExpanded["attention"] ?: true,
+                            onToggle = { toggleSection("attention") },
+                            count = attention.size,
+                            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 4.dp)
                         )
                     }
                     carouselRows(
@@ -537,22 +500,15 @@ fun WishlistScreen(
                         onOpenItem = onOpenItem,
                         onToggleSelection = vm::toggleSelection,
                         onEnterSelection = vm::enterSelection,
-                        onItemPurchasedChanged = { id, purchased -> vm.togglePurchased(id, purchased) },
                         expanded = sectionExpanded["attention"] ?: true
                     )
                     item(key = "section-library") {
-                        SectionLabel(
+                        CollapsibleSectionLabel(
                             text = "Library",
-                            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 4.dp),
-                            trailing = {
-                                IconButton(onClick = { toggleSection("library") }) {
-                                    Icon(
-                                        imageVector = if (sectionExpanded["library"] ?: true) Icons.Rounded.ExpandMore else Icons.Rounded.ExpandLess,
-                                        contentDescription = if (sectionExpanded["library"] ?: true) "Collapse library" else "Expand library",
-                                        tint = extra.muted
-                                    )
-                                }
-                            }
+                            expanded = sectionExpanded["library"] ?: true,
+                            onToggle = { toggleSection("library") },
+                            count = rest.size,
+                            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 4.dp)
                         )
                     }
                     carouselRows(
@@ -563,7 +519,6 @@ fun WishlistScreen(
                         onOpenItem = onOpenItem,
                         onToggleSelection = vm::toggleSelection,
                         onEnterSelection = vm::enterSelection,
-                        onItemPurchasedChanged = { id, purchased -> vm.togglePurchased(id, purchased) },
                         expanded = sectionExpanded["library"] ?: true
                     )
                 } else {
@@ -575,7 +530,6 @@ fun WishlistScreen(
                         onOpenItem = onOpenItem,
                         onToggleSelection = vm::toggleSelection,
                         onEnterSelection = vm::enterSelection,
-                        onItemPurchasedChanged = { id, purchased -> vm.togglePurchased(id, purchased) }
                     )
                 }
             }
@@ -629,7 +583,6 @@ fun WishlistScreen(
                                 swipeEnabled = !state.selectionMode,
                                 isRevealed = revealedItemId == id,
                                 onRevealedChange = { open -> revealedItemId = if (open) id else if (revealedItemId == id) null else revealedItemId },
-                                onTogglePurchased = { vm.togglePurchased(id, !item.item.isPurchased) },
                                 surface = "wishlist",
                                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 5.dp)
                             )
@@ -639,25 +592,12 @@ fun WishlistScreen(
                     val attention = state.items.filter(::needsAttention)
                     val rest = state.items.filter { !needsAttention(it) }
                     item(key = "section-attention") {
-                        SectionLabel(
+                        CollapsibleSectionLabel(
                             text = "Needs attention",
-                            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 4.dp),
-                            trailing = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = "${attention.size}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = extra.muted
-                                    )
-                                    IconButton(onClick = { toggleSection("attention") }) {
-                                        Icon(
-                                            imageVector = if (sectionExpanded["attention"] ?: true) Icons.Rounded.ExpandMore else Icons.Rounded.ExpandLess,
-                                            contentDescription = if (sectionExpanded["attention"] ?: true) "Collapse attention" else "Expand attention",
-                                            tint = extra.muted
-                                        )
-                                    }
-                                }
-                            }
+                            expanded = sectionExpanded["attention"] ?: true,
+                            onToggle = { toggleSection("attention") },
+                            count = attention.size,
+                            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 4.dp)
                         )
                     }
                     items(if (sectionExpanded["attention"] ?: true) attention else emptyList(), key = { "attn-${it.item.id}" }) { item ->
@@ -688,18 +628,12 @@ fun WishlistScreen(
                         )
                     }
                     item(key = "section-library") {
-                        SectionLabel(
+                        CollapsibleSectionLabel(
                             text = "Library",
-                            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 4.dp),
-                            trailing = {
-                                IconButton(onClick = { toggleSection("library") }) {
-                                    Icon(
-                                        imageVector = if (sectionExpanded["library"] ?: true) Icons.Rounded.ExpandMore else Icons.Rounded.ExpandLess,
-                                        contentDescription = if (sectionExpanded["library"] ?: true) "Collapse library" else "Expand library",
-                                        tint = extra.muted
-                                    )
-                                }
-                            }
+                            expanded = sectionExpanded["library"] ?: true,
+                            onToggle = { toggleSection("library") },
+                            count = rest.size,
+                            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 4.dp)
                         )
                     }
                     items(if (sectionExpanded["library"] ?: true) rest else emptyList(), key = { "lib-${it.item.id}" }) { item ->
@@ -1519,7 +1453,6 @@ private fun LazyListScope.gridRows(
     onOpenItem: (Long) -> Unit,
     onToggleSelection: (Long) -> Unit,
     onEnterSelection: (Long) -> Unit,
-    onItemPurchasedChanged: ((Long, Boolean) -> Unit)? = null,
     expanded: Boolean = true
 ) {
     if (!expanded) return
@@ -1540,7 +1473,6 @@ private fun LazyListScope.gridRows(
                     selected = selected,
                     selectionMode = selectionMode,
                     onLongClick = { if (!selectionMode) onEnterSelection(id) else onToggleSelection(id) },
-                    onTogglePurchased = { onItemPurchasedChanged?.invoke(id, !item.item.isPurchased) },
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -1557,7 +1489,6 @@ private fun LazyListScope.carouselRows(
     onOpenItem: (Long) -> Unit,
     onToggleSelection: (Long) -> Unit,
     onEnterSelection: (Long) -> Unit,
-    onItemPurchasedChanged: ((Long, Boolean) -> Unit)? = null,
     expanded: Boolean = true
 ) {
     if (!expanded) return
@@ -1577,7 +1508,6 @@ private fun LazyListScope.carouselRows(
                     selected = selected,
                     selectionMode = selectionMode,
                     onLongClick = { if (!selectionMode) onEnterSelection(id) else onToggleSelection(id) },
-                    onTogglePurchased = { onItemPurchasedChanged?.invoke(id, !item.item.isPurchased) },
                     modifier = Modifier.width(172.dp)
                 )
             }
@@ -1759,8 +1689,7 @@ private fun WishlistGridCard(
     modifier: Modifier = Modifier,
     selected: Boolean = false,
     selectionMode: Boolean = false,
-    onLongClick: (() -> Unit)? = null,
-    onTogglePurchased: (() -> Unit)? = null
+    onLongClick: (() -> Unit)? = null
 ) {
     val colors = MaterialTheme.colorScheme
     val extra = LocalWishExtraColors.current
@@ -1821,25 +1750,6 @@ private fun WishlistGridCard(
                                 contentDescription = "Selected",
                                 tint = colors.onPrimary,
                                 modifier = Modifier.size(16.dp)
-                            )
-                        }
-                    }
-                }
-                if (!selectionMode && onTogglePurchased != null) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(6.dp)
-                    ) {
-                        IconButton(
-                            onClick = onTogglePurchased,
-                            modifier = Modifier.size(40.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (isPurchased) Icons.Rounded.Done else Icons.Rounded.ShoppingBag,
-                                contentDescription = if (isPurchased) "Mark not bought" else "Mark bought",
-                                tint = if (isPurchased) colors.primary else extra.muted,
-                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }

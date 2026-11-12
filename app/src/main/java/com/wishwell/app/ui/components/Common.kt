@@ -46,12 +46,12 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Checkroom
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
-import androidx.compose.material.icons.rounded.Done
 import androidx.compose.material.icons.rounded.Devices
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.FitnessCenter
 import androidx.compose.material.icons.rounded.Home
-import androidx.compose.material.icons.rounded.ShoppingBag
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -104,7 +104,12 @@ import kotlin.math.absoluteValue
 enum class BadgeTone { LOW, GOOD, NEUTRAL, HIGH }
 
 @Composable
-fun SectionLabel(text: String, modifier: Modifier = Modifier, trailing: (@Composable () -> Unit)? = null) {
+fun SectionLabel(
+    text: String,
+    modifier: Modifier = Modifier,
+    trailing: (@Composable () -> Unit)? = null,
+    afterText: (@Composable () -> Unit)? = null
+) {
     val extra = LocalWishExtraColors.current
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -113,11 +118,54 @@ fun SectionLabel(text: String, modifier: Modifier = Modifier, trailing: (@Compos
         Text(
             text = text.uppercase(),
             style = MaterialTheme.typography.labelSmall,
-            color = extra.muted,
-            modifier = Modifier.weight(1f)
+            color = extra.muted
         )
+        afterText?.invoke()
+        Spacer(Modifier.weight(1f))
         trailing?.invoke()
     }
+}
+
+@Composable
+fun CollapsibleSectionLabel(
+    text: String,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+    count: Int? = null
+) {
+    val extra = LocalWishExtraColors.current
+    SectionLabel(
+        text = text,
+        modifier = modifier,
+        afterText = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(22.dp)
+                        .clip(CircleShape)
+                        .clickable(onClick = onToggle),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = if (expanded) Icons.Rounded.ExpandMore else Icons.Rounded.ExpandLess,
+                        contentDescription = if (expanded) "Collapse $text" else "Expand $text",
+                        tint = extra.muted,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+        },
+        trailing = if (count == null) null else {
+            {
+                Text(
+                    text = "$count",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = extra.muted
+                )
+            }
+        }
+    )
 }
 
 @Composable
@@ -484,7 +532,6 @@ fun WishCard(
     selected: Boolean = false,
     selectionMode: Boolean = false,
     onLongClick: (() -> Unit)? = null,
-    onTogglePurchased: (() -> Unit)? = null,
     surface: String = "app"
 ) {
     val colors = MaterialTheme.colorScheme
@@ -492,7 +539,6 @@ fun WishCard(
     val price = item.price
     val listPrice = item.item.listPrice
     val belowTarget = item.item.targetPrice?.let { t -> price != null && price <= t + 0.005 } == true
-    val isPurchased = item.item.isPurchased
     val borderColor = when {
         selected -> colors.primary
         else -> extra.hairline
@@ -542,24 +588,6 @@ fun WishCard(
                                     modifier = Modifier.size(16.dp)
                                 )
                             }
-                        }
-                    }
-                }
-                if (!selectionMode && onTogglePurchased != null) {
-                    Box(
-                        modifier = Modifier
-                            .padding(top = 4.dp, start = 4.dp)
-                    ) {
-                        IconButton(
-                            onClick = onTogglePurchased,
-                            modifier = Modifier.size(40.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (isPurchased) Icons.Rounded.Done else Icons.Rounded.ShoppingBag,
-                                contentDescription = if (isPurchased) "Mark not bought" else "Mark bought",
-                                tint = if (isPurchased) colors.primary else extra.muted,
-                                modifier = Modifier.size(20.dp)
-                            )
                         }
                     }
                 }
@@ -655,7 +683,6 @@ fun SwipeableWishCard(
     swipeEnabled: Boolean = true,
     isRevealed: Boolean = false,
     onRevealedChange: (Boolean) -> Unit = {},
-    onTogglePurchased: (() -> Unit)? = null,
     surface: String = "app"
 ) {
     val colors = MaterialTheme.colorScheme
@@ -766,7 +793,6 @@ fun SwipeableWishCard(
             selected = selected,
             selectionMode = selectionMode,
             onLongClick = onLongClick,
-            onTogglePurchased = onTogglePurchased,
             surface = surface,
             modifier = Modifier
                 .fillMaxWidth()

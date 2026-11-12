@@ -50,7 +50,10 @@ fun AccentColorPickerDialog(
     initialHex: String?,
     onDismiss: () -> Unit,
     onApply: (hex: String) -> Unit,
-    onResetDefault: () -> Unit
+    onResetDefault: () -> Unit,
+    title: String = "Custom accent color",
+    subtitle: String = "Pick a color (spectrum + hue). Applied as the app highlight.",
+    showReset: Boolean = true
 ) {
     val init = parseHexColor(initialHex) ?: Color(0xFF1F3D2E)
     val initHsv = remember(initialHex) {
@@ -73,14 +76,14 @@ fun AccentColorPickerDialog(
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(
-                    text = "Custom accent color",
+                    text = title,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = colors.onSurface
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "Pick a color (spectrum + hue). Applied as the app highlight.",
+                    text = subtitle,
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.onSurfaceVariant
                 )
@@ -144,7 +147,9 @@ fun AccentColorPickerDialog(
 
                 Spacer(Modifier.height(10.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = onResetDefault) { Text("Default (Green)") }
+                    if (showReset) {
+                        TextButton(onClick = onResetDefault) { Text("Default (Green)") }
+                    }
                     Row {
                         TextButton(onClick = onDismiss) { Text("Cancel") }
                         Spacer(Modifier.width(4.dp))

@@ -39,6 +39,14 @@ class UserPreferences(private val context: Context) {
 
         // UI theme: "system", "light", "dark"
         val UI_THEME = stringPreferencesKey("ui_theme")
+
+        // Widget appearance
+        val WIDGET_TEXT_SIZE = stringPreferencesKey("widget_text_size")
+        val WIDGET_SHOW_IMAGES = booleanPreferencesKey("widget_show_images")
+        val WIDGET_BACKGROUND_OPACITY = intPreferencesKey("widget_background_opacity")
+        val WIDGET_BORDER_STYLE = stringPreferencesKey("widget_border_style")
+        val WIDGET_BORDER_COLOR = stringPreferencesKey("widget_border_color")
+        val WIDGET_BORDER_WIDTH = intPreferencesKey("widget_border_width")
     }
 
     val refreshIntervalHours: Flow<Int> =
@@ -107,6 +115,23 @@ class UserPreferences(private val context: Context) {
     /** App theme: "system", "light", "dark". */
     val uiTheme: Flow<String> =
         context.dataStore.data.map { it[Keys.UI_THEME] ?: "system" }
+
+    /** Widget text size: "small", "default", "large". */
+    val widgetTextSize: Flow<String> =
+        context.dataStore.data.map { it[Keys.WIDGET_TEXT_SIZE] ?: "default" }
+
+    fun widgetTextScale(size: String): Float = when (size) {
+        "small" -> 0.88f
+        "large" -> 1.18f
+        else -> 1f
+    }
+
+    val widgetShowImages: Flow<Boolean> =
+        context.dataStore.data.map { it[Keys.WIDGET_SHOW_IMAGES] ?: true }
+
+    /** Widget background opacity, 20-100 percent. */
+    val widgetBackgroundOpacity: Flow<Int> =
+        context.dataStore.data.map { (it[Keys.WIDGET_BACKGROUND_OPACITY] ?: 100).coerceIn(20, 100) }
 
     suspend fun setRefreshInterval(hours: Int) {
         context.dataStore.edit { it[Keys.REFRESH_HOURS] = hours }
@@ -190,5 +215,41 @@ class UserPreferences(private val context: Context) {
 
     suspend fun setUiTheme(theme: String) {
         context.dataStore.edit { it[Keys.UI_THEME] = theme }
+    }
+
+    suspend fun setWidgetTextSize(size: String) {
+        context.dataStore.edit { it[Keys.WIDGET_TEXT_SIZE] = size }
+    }
+
+    suspend fun setWidgetShowImages(show: Boolean) {
+        context.dataStore.edit { it[Keys.WIDGET_SHOW_IMAGES] = show }
+    }
+
+    suspend fun setWidgetBackgroundOpacity(percent: Int) {
+        context.dataStore.edit { it[Keys.WIDGET_BACKGROUND_OPACITY] = percent.coerceIn(20, 100) }
+    }
+
+    /** Widget border: "none", "accent", or "custom". */
+    val widgetBorderStyle: Flow<String> =
+        context.dataStore.data.map { it[Keys.WIDGET_BORDER_STYLE] ?: "none" }
+
+    /** Hex color used when the border style is "custom". */
+    val widgetBorderColor: Flow<String> =
+        context.dataStore.data.map { it[Keys.WIDGET_BORDER_COLOR] ?: "#1F3D2E" }
+
+    /** Widget border thickness in dp, 1-8. */
+    val widgetBorderWidth: Flow<Int> =
+        context.dataStore.data.map { (it[Keys.WIDGET_BORDER_WIDTH] ?: 2).coerceIn(1, 8) }
+
+    suspend fun setWidgetBorderStyle(style: String) {
+        context.dataStore.edit { it[Keys.WIDGET_BORDER_STYLE] = style }
+    }
+
+    suspend fun setWidgetBorderColor(hex: String) {
+        context.dataStore.edit { it[Keys.WIDGET_BORDER_COLOR] = hex }
+    }
+
+    suspend fun setWidgetBorderWidth(dp: Int) {
+        context.dataStore.edit { it[Keys.WIDGET_BORDER_WIDTH] = dp.coerceIn(1, 8) }
     }
 }

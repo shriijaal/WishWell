@@ -6,4 +6,9 @@
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">true</item>
     </style>
+
+    <!-- Overrides Glance's internal list style so the widget's LazyColumn does not draw a scrollbar. -->
+    <style name="Glance.AppWidget.List" parent="">
+        <item name="android:scrollbars">none</item>
+    </style>
 </resources>

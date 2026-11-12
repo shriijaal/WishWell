@@ -1,6 +1,11 @@
 package com.wishwell.app.widget
 
 import android.content.Context
+import android.graphics.Bitmap
+import androidx.core.graphics.drawable.toBitmap
+import coil.imageLoader
+import coil.request.ImageRequest
+import coil.request.SuccessResult
 import com.wishwell.app.WishwellApp
 import com.wishwell.app.data.model.ItemWithStats
 import com.wishwell.app.util.formatMoney
@@ -13,7 +18,9 @@ internal data class WidgetEntry(
     val storeName: String,
     val priceText: String,
     val badge: String?,
-    val isDrop: Boolean
+    val isDrop: Boolean,
+    val imageUrl: String? = null,
+    val image: Bitmap? = null
 )
 
 internal object WidgetData {
@@ -22,7 +29,8 @@ internal object WidgetData {
         context: Context,
         dropsOnly: Boolean = false,
         sortOrder: String = "recent",
-        limit: Int = 8
+        limit: Int = 8,
+        loadImages: Boolean = false
     ): List<WidgetEntry> =
         withContext(Dispatchers.IO) {
             runCatching {
@@ -44,9 +52,29 @@ internal object WidgetData {
                     }
                     .take(limit)
                     .toList()
-                items.map { it.toEntry() }
+                val entries = items.map { it.toEntry() }
+                if (!loadImages) {
+                    entries
+                } else {
+                    entries.map { it.withImage(context) }
+                }
             }.getOrDefault(emptyList())
         }
+
+    private suspend fun WidgetEntry.withImage(context: Context): WidgetEntry {
+        val url = imageUrl ?: return this
+        val request = ImageRequest.Builder(context)
+            .data(url)
+            .size(THUMB_SIZE_PX)
+            .allowHardware(false)
+            .build()
+        val bitmap = runCatching {
+            (context.imageLoader.execute(request) as? SuccessResult)?.drawable?.toBitmap()
+        }.getOrNull()
+        return copy(image = bitmap)
+    }
+
+    private const val THUMB_SIZE_PX = 128
 
     private fun ItemWithStats.toEntry(): WidgetEntry {
         val badge = when {
@@ -60,7 +88,8 @@ internal object WidgetData {
             storeName = item.storeName.take(40),
             priceText = formatMoney(price, item.currencyCode),
             badge = badge,
-            isDrop = (discountPercent ?: 0) > 0 || isAtLowest
+            isDrop = (discountPercent ?: 0) > 0 || isAtLowest,
+            imageUrl = item.imageUrls().firstOrNull()
         )
     }
 }

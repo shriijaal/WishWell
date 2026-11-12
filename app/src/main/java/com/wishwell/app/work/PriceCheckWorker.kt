@@ -5,6 +5,7 @@ import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
@@ -59,7 +60,12 @@ class WorkScheduler(private val context: Context) {
                     .build()
             )
             .build()
-        WorkManager.getInstance(context).enqueue(request)
+        // Replace any queued check so repeated taps don't pile up duplicate work.
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            QUICK_CHECK_WORK_NAME,
+            ExistingWorkPolicy.REPLACE,
+            request
+        )
     }
 
     /** Schedules or cancels automatic backups based on frequency. */
@@ -73,5 +79,6 @@ class WorkScheduler(private val context: Context) {
 
     companion object {
         const val PRICE_CHECK_WORK_NAME = "wishwell_price_check"
+        const val QUICK_CHECK_WORK_NAME = "wishwell_quick_price_check"
     }
 }

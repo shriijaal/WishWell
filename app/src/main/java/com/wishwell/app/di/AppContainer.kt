@@ -13,7 +13,7 @@ import com.wishwell.app.work.WorkScheduler
 
 class AppContainer(context: Context) {
 
-    private val appContext = context.applicationContext
+    val appContext = context.applicationContext
 
     private val database = WishwellDatabase.build(appContext)
 

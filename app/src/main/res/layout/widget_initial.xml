@@ -3,13 +3,29 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/widget_bg"
-    android:padding="12dp">
+    android:padding="16dp"
+    android:paddingTop="14dp"
+    android:paddingBottom="14dp">
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="center"
-        android:text="@string/app_name"
-        android:textColor="#171A14"
-        android:textSize="14sp" />
+    <!-- Two identical skeletons fade into each other so the placeholder pulses while data loads. -->
+    <ViewFlipper
+        android:id="@+id/widget_skeleton_flipper"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:animateFirstView="false"
+        android:autoStart="true"
+        android:flipInterval="800"
+        android:inAnimation="@android:anim/fade_in"
+        android:outAnimation="@android:anim/fade_out">
+
+        <include layout="@layout/widget_skeleton_body" />
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:alpha="0.45">
+
+            <include layout="@layout/widget_skeleton_body" />
+        </FrameLayout>
+    </ViewFlipper>
 </FrameLayout>
