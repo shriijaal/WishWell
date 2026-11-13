@@ -447,6 +447,7 @@ fun ProductImageCarousel(
 
 @Composable
 fun PriceRangeMeter(item: ItemWithStats, modifier: Modifier = Modifier) {
+    val colors = MaterialTheme.colorScheme
     val extra = LocalWishExtraColors.current
     val low = item.lowest
     // Include the store's current list price as the "high" reference so a sale item still shows
@@ -474,18 +475,21 @@ fun PriceRangeMeter(item: ItemWithStats, modifier: Modifier = Modifier) {
         return
     }
 
+    val currentPrice = price ?: return
+    val atLowest = currentPrice <= low + 0.01
+
     Column(modifier = modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
-                "Low ${formatMoney(low, item.item.currencyCode)}",
+                "Lowest ${formatMoney(low, item.item.currencyCode)}",
                 style = MaterialTheme.typography.labelSmall,
                 color = extra.muted
             )
             Text(
-                "High ${formatMoney(high, item.item.currencyCode)}",
+                "Highest ${formatMoney(high, item.item.currencyCode)}",
                 style = MaterialTheme.typography.labelSmall,
                 color = extra.muted
             )
@@ -497,29 +501,43 @@ fun PriceRangeMeter(item: ItemWithStats, modifier: Modifier = Modifier) {
                 .height(8.dp)
         ) {
             val centerY = size.height / 2f
+            val inset = 4.dp.toPx()
+            val trackStart = Offset(inset, centerY)
+            val trackEnd = Offset(size.width - inset, centerY)
             drawLine(
                 color = extra.hairline,
-                start = Offset(0f, centerY),
-                end = Offset(size.width, centerY),
+                start = trackStart,
+                end = trackEnd,
                 strokeWidth = 3.dp.toPx(),
                 cap = androidx.compose.ui.graphics.StrokeCap.Round
+            )
+            // End caps make the track read as a low-to-high range, not a loading bar.
+            drawCircle(color = extra.muted.copy(alpha = 0.45f), radius = 2.dp.toPx(), center = trackStart)
+            drawCircle(color = extra.muted.copy(alpha = 0.45f), radius = 2.dp.toPx(), center = trackEnd)
+            val marker = Offset(
+                (size.width - inset * 2) * position + inset,
+                centerY
             )
             drawLine(
                 color = extra.moss.copy(alpha = 0.55f),
-                start = Offset(0f, centerY),
-                end = Offset(size.width * position, centerY),
+                start = trackStart,
+                end = marker,
                 strokeWidth = 3.dp.toPx(),
                 cap = androidx.compose.ui.graphics.StrokeCap.Round
             )
-            drawCircle(
-                color = extra.moss,
-                radius = 4.dp.toPx(),
-                center = Offset(
-                    (size.width - 8.dp.toPx()) * position + 4.dp.toPx(),
-                    centerY
-                )
-            )
+            drawCircle(color = colors.surface, radius = 5.5.dp.toPx(), center = marker)
+            drawCircle(color = extra.moss, radius = 4.dp.toPx(), center = marker)
         }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = if (atLowest) {
+                "At its lowest tracked price"
+            } else {
+                "${formatMoney(currentPrice - low, item.item.currencyCode)} above its lowest"
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = if (atLowest) extra.moss else extra.muted
+        )
     }
 }
 
