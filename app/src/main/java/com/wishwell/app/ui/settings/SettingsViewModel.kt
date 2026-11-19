@@ -20,6 +20,7 @@ data class SettingsUiState(
     val notificationsEnabled: Boolean = true,
     val notifyOnTarget: Boolean = true,
     val notifyOnNewLow: Boolean = true,
+    val notifyOnPriceIncrease: Boolean = false,
     val defaultCurrency: String = "USD",
     val accentColor: String = "green",
     val navbarStyle: String = "classic",
@@ -39,11 +40,19 @@ data class SettingsUiState(
     val uiTheme: String = "system"
 )
 
+private data class PrefsCore2(
+    val notifyOnNewLow: Boolean,
+    val notifyOnPriceIncrease: Boolean,
+    val defaultCurrency: String,
+    val accentColor: String
+)
+
 private data class PrefsSnapshot(
     val refreshHours: Int,
     val notificationsEnabled: Boolean,
     val notifyOnTarget: Boolean,
     val notifyOnNewLow: Boolean,
+    val notifyOnPriceIncrease: Boolean,
     val defaultCurrency: String,
     val accentColor: String,
     val navbarStyle: String,
@@ -78,9 +87,10 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     private val prefsCore2 = combine(
         prefs.notifyOnNewLow,
+        prefs.notifyOnPriceIncrease,
         prefs.defaultCurrency,
         prefs.accentColor
-    ) { low, currency, accent -> Triple(low, currency, accent) }
+    ) { low, increase, currency, accent -> PrefsCore2(low, increase, currency, accent) }
 
     private val navPrefs = combine(prefs.navbarStyle, prefs.navbarGlassGlow) { style, glow -> style to glow }
 
@@ -96,9 +106,10 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             refreshHours = c1.first,
             notificationsEnabled = c1.second,
             notifyOnTarget = c1.third,
-            notifyOnNewLow = c2.first,
-            defaultCurrency = c2.second,
-            accentColor = c2.third,
+            notifyOnNewLow = c2.notifyOnNewLow,
+            notifyOnPriceIncrease = c2.notifyOnPriceIncrease,
+            defaultCurrency = c2.defaultCurrency,
+            accentColor = c2.accentColor,
             navbarStyle = nav.first,
             navbarGlassGlow = nav.second,
             backupLocation = bk.first,
@@ -127,6 +138,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             notificationsEnabled = p.notificationsEnabled,
             notifyOnTarget = p.notifyOnTarget,
             notifyOnNewLow = p.notifyOnNewLow,
+            notifyOnPriceIncrease = p.notifyOnPriceIncrease,
             defaultCurrency = p.defaultCurrency,
             accentColor = p.accentColor,
             navbarStyle = p.navbarStyle,
@@ -182,6 +194,10 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun setNotifyOnNewLow(enabled: Boolean) {
         viewModelScope.launch { prefs.setNotifyOnNewLow(enabled) }
+    }
+
+    fun setNotifyOnPriceIncrease(enabled: Boolean) {
+        viewModelScope.launch { prefs.setNotifyOnPriceIncrease(enabled) }
     }
 
     fun setDefaultCurrency(code: String) {

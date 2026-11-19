@@ -453,6 +453,17 @@ class WishlistRepository(
                 newLow = lowAlertEnabled
             )
         }
+
+        // Sale ended: price rose significantly after being on sale
+        val increaseAlertEnabled = prefs.notifyOnPriceIncrease.first()
+        if (increaseAlertEnabled && oldPrice != null) {
+            val listPrice = item.listPrice ?: return
+            val wasOnSale = oldPrice < listPrice * 0.98 // was at least 2% below list
+            val saleEnded = wasOnSale && newPrice >= listPrice * 0.95 // now back near list price
+            if (saleEnded) {
+                notifier.notifySaleEnded(item, oldPrice, newPrice, listPrice)
+            }
+        }
     }
 
     suspend fun refreshAll(): RefreshSummary = withContext(Dispatchers.IO) {

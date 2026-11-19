@@ -280,6 +280,14 @@ fun SettingsScreen(container: AppContainer) {
                 enabled = state.notificationsEnabled,
                 onCheckedChange = viewModel::setNotifyOnNewLow
             )
+            RowDivider()
+            SwitchRow(
+                title = "Sale ended",
+                subtitle = "Notify when a discount ends and price jumps back up",
+                checked = state.notifyOnPriceIncrease,
+                enabled = state.notificationsEnabled,
+                onCheckedChange = viewModel::setNotifyOnPriceIncrease
+            )
             if (!systemNotificationsEnabled) {
                 Spacer(Modifier.height(10.dp))
                 Text(

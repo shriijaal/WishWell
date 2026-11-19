@@ -15,6 +15,7 @@ import com.wishwell.app.MainActivity
 import com.wishwell.app.R
 import com.wishwell.app.data.model.WishItem
 import com.wishwell.app.util.formatMoney
+import kotlin.math.roundToInt
 
 class Notifier(private val context: Context) {
 
@@ -96,6 +97,51 @@ class Notifier(private val context: Context) {
 
         runCatching {
             NotificationManagerCompat.from(context).notify(item.id.toInt(), notification)
+        }
+    }
+
+    fun notifySaleEnded(
+        item: WishItem,
+        oldPrice: Double,
+        newPrice: Double,
+        listPrice: Double
+    ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) return
+
+        val price = formatMoney(newPrice, item.currencyCode)
+        val was = formatMoney(oldPrice, item.currencyCode)
+        val list = formatMoney(listPrice, item.currencyCode)
+        val discountPct = ((1 - oldPrice / listPrice) * 100).roundToInt().coerceAtLeast(0)
+
+        val title = "Sale ended: ${item.title.take(60)}"
+        val body = "Price rose from $was → $price at ${item.storeName} (was $discountPct% off $list)."
+
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(EXTRA_ITEM_ID, item.id)
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            item.id.toInt(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat_wishwell)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .build()
+
+        runCatching {
+            NotificationManagerCompat.from(context).notify(item.id.toInt() + 2000, notification)
         }
     }
 

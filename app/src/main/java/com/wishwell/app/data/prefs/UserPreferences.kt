@@ -22,6 +22,7 @@ class UserPreferences(private val context: Context) {
         val NOTIFICATIONS = booleanPreferencesKey("notifications_enabled")
         val NOTIFY_TARGET = booleanPreferencesKey("notify_target")
         val NOTIFY_NEW_LOW = booleanPreferencesKey("notify_new_low")
+        val NOTIFY_PRICE_INCREASE = booleanPreferencesKey("notify_price_increase")
         val DEFAULT_CURRENCY = stringPreferencesKey("default_currency")
         val LAST_REFRESH = longPreferencesKey("last_refresh")
         val NAVBAR_STYLE = stringPreferencesKey("navbar_style")
@@ -60,6 +61,9 @@ class UserPreferences(private val context: Context) {
 
     val notifyOnNewLow: Flow<Boolean> =
         context.dataStore.data.map { it[Keys.NOTIFY_NEW_LOW] ?: true }
+
+    val notifyOnPriceIncrease: Flow<Boolean> =
+        context.dataStore.data.map { it[Keys.NOTIFY_PRICE_INCREASE] ?: false }
 
     val defaultCurrency: Flow<String> =
         context.dataStore.data.map { it[Keys.DEFAULT_CURRENCY] ?: "USD" }
@@ -144,6 +148,10 @@ class UserPreferences(private val context: Context) {
 
     suspend fun setNotifyOnNewLow(enabled: Boolean) {
         context.dataStore.edit { it[Keys.NOTIFY_NEW_LOW] = enabled }
+    }
+
+    suspend fun setNotifyOnPriceIncrease(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.NOTIFY_PRICE_INCREASE] = enabled }
     }
 
     suspend fun setDefaultCurrency(code: String) {
